@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
-import { Container, Table, Form, Button, Row, Col, Card, Alert } from "react-bootstrap";
 
 export default function Salary() {
   const [salaries, setSalaries] = useState([]);
@@ -20,8 +18,11 @@ export default function Salary() {
   // Fetch Labourers
   const fetchLabourers = useCallback(async () => {
     try {
-      const response = await axios.get("http://localhost:5000/labourers", { withCredentials: true });
-      setLabourNames(response.data.map((labour) => labour.name));
+      const response = await fetch("http://localhost:5000/labourers", { 
+        credentials: 'include'
+      });
+      const data = await response.json();
+      setLabourNames(data.map((labour) => labour.name));
     } catch (error) {
       console.error("Error fetching labourers", error);
       showNotification("Could not load workers list. Please check your connection.", "danger");
@@ -31,8 +32,11 @@ export default function Salary() {
   // Fetch Salaries
   const fetchSalaries = useCallback(async () => {
     try {
-      const response = await axios.get("http://localhost:5000/salaries", { withCredentials: true });
-      setSalaries(response.data);
+      const response = await fetch("http://localhost:5000/salaries", { 
+        credentials: 'include'
+      });
+      const data = await response.json();
+      setSalaries(data);
     } catch (error) {
       console.error("Error fetching salaries", error);
       showNotification("Could not load salary records. Please check your connection.", "danger");
@@ -55,18 +59,21 @@ export default function Salary() {
     const salaryEntry = {
       ...newSalary,
       day: currentDate.toLocaleDateString("en-US", { weekday: "long" }),
-     date: currentDate.toISOString().split('T')[0], // ⬅️ gives format like "2025-07-09"
-
+      date: currentDate.toISOString().split('T')[0],
       time: currentDate.toLocaleTimeString(),
     };
 
     try {
-      const response = await axios.post(
-        "http://localhost:5000/salaries",
-        salaryEntry,
-        { withCredentials: true } // ✅ send token cookie
-      );
-      setSalaries([...salaries, response.data]);
+      const response = await fetch("http://localhost:5000/salaries", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(salaryEntry),
+      });
+      const data = await response.json();
+      setSalaries([...salaries, data]);
       setNewSalary({ labourName: "", salaryAmount: "" });
       showNotification(`Salary of ₹${newSalary.salaryAmount} added for ${newSalary.labourName}`, "success");
     } catch (error) {
@@ -74,7 +81,6 @@ export default function Salary() {
       showNotification("Failed to add salary. Please try again.", "danger");
     }
   };
-
 
   // Add Labourer
   const addLabour = async () => {
@@ -84,11 +90,14 @@ export default function Salary() {
     }
 
     try {
-      await axios.post(
-        "http://localhost:5000/labourers",
-        { name: newLabour },
-        { withCredentials: true } // ✅ Fix: Send cookie with JWT token
-      );
+      await fetch("http://localhost:5000/labourers", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ name: newLabour }),
+      });
       setLabourNames([...labourNames, newLabour]);
       setNewLabour("");
       showNotification(`Worker "${newLabour}" added successfully`, "success");
@@ -97,7 +106,6 @@ export default function Salary() {
       showNotification("Failed to add worker. Please try again.", "danger");
     }
   };
-
 
   // Organize salaries by labour name
   const salariesByLabour = {};
@@ -131,29 +139,53 @@ export default function Salary() {
   const monthName = new Date().toLocaleString('default', { month: 'long' });
 
   return (
-    <Container className="py-4">
-      <h1 className="text-center mb-4" style={{ fontSize: "32px", color: "#333" }}>Salary Management</h1>
+    <div className="min-vh-100" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <div className="container py-5">
+        {/* Header */}
+        <div className="text-center mb-5">
+          <h1 className="display-4 fw-bold text-white mb-3">
+            <i className="fas fa-money-check-alt me-3"></i>
+            Salary Management System
+          </h1>
+          <p className="lead text-white-50">Manage worker salaries with ease and efficiency</p>
+        </div>
 
-      {notification.show && (
-        <Alert variant={notification.variant} onClose={() => setNotification({ show: false })} dismissible>
-          {notification.message}
-        </Alert>
-      )}
+        {/* Notification */}
+        {notification.show && (
+          <div className={`alert alert-${notification.variant} alert-dismissible fade show shadow-sm mb-4`} role="alert">
+            <div className="d-flex align-items-center">
+              <i className={`fas ${notification.variant === 'success' ? 'fa-check-circle' : notification.variant === 'warning' ? 'fa-exclamation-triangle' : 'fa-times-circle'} me-2`}></i>
+              {notification.message}
+            </div>
+            <button 
+              type="button" 
+              className="btn-close" 
+              onClick={() => setNotification({ show: false })}
+              aria-label="Close"
+            ></button>
+          </div>
+        )}
 
-      <Row className="mb-4">
-        <Col md={12} lg={6} className="mb-4">
-          {/* Add Labour Form */}
-          <Card className="border-primary" style={{ borderWidth: "2px" }}>
-            <Card.Header className="bg-primary text-white" style={{ fontSize: "24px" }}>
-              Add New Worker
-            </Card.Header>
-            <Card.Body>
-              <Form>
-                <Form.Group className="mb-3">
-                  <Form.Label style={{ fontSize: "18px" }}>Worker Name</Form.Label>
-                  <Form.Control
+        {/* Action Cards */}
+        <div className="row g-4 mb-5">
+          {/* Add Worker Card */}
+          <div className="col-lg-6">
+            <div className="card h-100 shadow-lg border-0" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
+              <div className="card-header bg-primary text-white border-0 py-3">
+                <h4 className="mb-0 d-flex align-items-center">
+                  <i className="fas fa-user-plus me-2"></i>
+                  Add New Worker
+                </h4>
+              </div>
+              <div className="card-body p-4">
+                <div className="mb-4">
+                  <label className="form-label fw-semibold text-dark">
+                    <i className="fas fa-user me-2"></i>Worker Name
+                  </label>
+                  <input
                     type="text"
-                    style={{ fontSize: "18px", height: "50px" }}
+                    className="form-control form-control-lg shadow-sm border-0"
+                    style={{ backgroundColor: '#f8f9fa', fontSize: '16px' }}
                     value={newLabour}
                     onChange={(e) => {
                       const capitalizedName = e.target.value
@@ -163,162 +195,225 @@ export default function Salary() {
                     }}
                     placeholder="Enter worker name"
                   />
-                </Form.Group>
-                <Button
+                </div>
+                <button
                   onClick={addLabour}
-                  className="w-100"
-                  variant="primary"
-                  size="lg"
-                  style={{ fontSize: "20px" }}
+                  className="btn btn-primary btn-lg w-100 shadow-sm"
+                  style={{ background: 'linear-gradient(45deg, #007bff, #0056b3)', border: 'none' }}
                 >
-                  Add Worker
-                </Button>
-              </Form>
-            </Card.Body>
-          </Card>
-        </Col>
+                  <i className="fas fa-plus me-2"></i>Add Worker
+                </button>
+              </div>
+            </div>
+          </div>
 
-        <Col md={12} lg={6} className="mb-4">
-          {/* Add Salary Form */}
-          <Card className="border-success" style={{ borderWidth: "2px" }}>
-            <Card.Header className="bg-success text-white" style={{ fontSize: "24px" }}>
-              Add Salary Payment
-            </Card.Header>
-            <Card.Body>
-              <Form>
-                <Form.Group className="mb-3">
-                  <Form.Label style={{ fontSize: "18px" }}>Select Worker</Form.Label>
-                  <Form.Select
-                    style={{ fontSize: "18px", height: "50px" }}
+          {/* Add Salary Card */}
+          <div className="col-lg-6">
+            <div className="card h-100 shadow-lg border-0" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
+              <div className="card-header bg-success text-white border-0 py-3">
+                <h4 className="mb-0 d-flex align-items-center">
+                  <i className="fas fa-money-bill-wave me-2"></i>
+                  Add Salary Payment
+                </h4>
+              </div>
+              <div className="card-body p-4">
+                <div className="mb-3">
+                  <label className="form-label fw-semibold text-dark">
+                    <i className="fas fa-users me-2"></i>Select Worker
+                  </label>
+                  <select
+                    className="form-select form-select-lg shadow-sm border-0"
+                    style={{ backgroundColor: '#f8f9fa', fontSize: '16px' }}
                     value={newSalary.labourName}
                     onChange={(e) => setNewSalary({ ...newSalary, labourName: e.target.value })}
                   >
-                    <option value="">Select Worker</option>
+                    <option value="">Choose Worker</option>
                     {labourNames.map((name, index) => (
                       <option key={index} value={name}>
                         {name}
                       </option>
                     ))}
-                  </Form.Select>
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label style={{ fontSize: "18px" }}>Salary Amount (₹)</Form.Label>
-                  <Form.Control
+                  </select>
+                </div>
+                <div className="mb-4">
+                  <label className="form-label fw-semibold text-dark">
+                    <i className="fas fa-rupee-sign me-2"></i>Salary Amount (₹)
+                  </label>
+                  <input
                     type="number"
-                    style={{ fontSize: "18px", height: "50px" }}
+                    className="form-control form-control-lg shadow-sm border-0"
+                    style={{ backgroundColor: '#f8f9fa', fontSize: '16px' }}
                     value={newSalary.salaryAmount}
                     onChange={(e) => setNewSalary({ ...newSalary, salaryAmount: e.target.value })}
                     placeholder="Enter amount"
                   />
-                </Form.Group>
-                <Button
+                </div>
+                <button
                   onClick={addSalary}
-                  className="w-100"
-                  variant="success"
-                  size="lg"
-                  style={{ fontSize: "20px" }}
+                  className="btn btn-success btn-lg w-100 shadow-sm"
+                  style={{ background: 'linear-gradient(45deg, #28a745, #1e7e34)', border: 'none' }}
                 >
-                  Add Salary
-                </Button>
-              </Form>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Monthly Summary */}
-      <Card className="mb-4 border-info" style={{ borderWidth: "2px" }}>
-        <Card.Header className="bg-info text-white" style={{ fontSize: "24px" }}>
-          {monthName} Summary
-        </Card.Header>
-        <Card.Body className="text-center">
-          <h3 style={{ fontSize: "22px" }}>Total Salaries Paid This Month</h3>
-          <h2 style={{ fontSize: "36px", color: "#28a745" }}>₹{totalSalaryThisMonth.toLocaleString('en-IN')}</h2>
-          <h4 style={{ fontSize: "20px" }}>Total Workers: {labourNames.length}</h4>
-        </Card.Body>
-      </Card>
-
-      {/* Salary Records */}
-      <Card className="mb-4 border-dark" style={{ borderWidth: "2px" }}>
-        <Card.Header className="bg-dark text-white" style={{ fontSize: "24px" }}>
-          Salary Records
-        </Card.Header>
-        <Card.Body className="p-0">
-          <div className="table-responsive">
-            <Table bordered hover className="mb-0">
-              <thead>
-                <tr style={{ backgroundColor: "#f8f9fa" }}>
-                  <th style={{ fontSize: "18px", backgroundColor: "#e9ecef" }}>Worker Name</th>
-                  <th style={{ fontSize: "18px", backgroundColor: "#e9ecef" }}>Salary Amount</th>
-                  <th style={{ fontSize: "18px", backgroundColor: "#e9ecef" }}>Day</th>
-                  <th style={{ fontSize: "18px", backgroundColor: "#e9ecef" }}>Date</th>
-                  <th style={{ fontSize: "18px", backgroundColor: "#e9ecef" }}>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.keys(salariesByLabour).length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-4" style={{ fontSize: "18px" }}>
-                      No salary records available
-                    </td>
-                  </tr>
-                ) : (
-                  Object.keys(salariesByLabour).map((labourName, index) =>
-                    salariesByLabour[labourName].map((salary, i) => (
-                      <tr key={`${index}-${i}`}>
-                        {i === 0 && (
-                          <td
-                            rowSpan={salariesByLabour[labourName].length}
-                            className="align-middle"
-                            style={{
-                              fontSize: "18px",
-                              fontWeight: "bold",
-                              backgroundColor: "#e8f4f8"
-                            }}
-                          >
-                            {labourName}
-                          </td>
-                        )}
-                        <td style={{ fontSize: "18px", fontWeight: "bold", color: "#28a745" }}>
-                          ₹{salary.amount.toLocaleString('en-IN')}
-                        </td>
-                        <td style={{ fontSize: "18px" }}>{salary.day}</td>
-                        <td style={{ fontSize: "18px" }}>{salary.date}</td>
-                        <td style={{ fontSize: "18px" }}>{salary.time}</td>
-                      </tr>
-                    ))
-                  )
-                )}
-              </tbody>
-              <tfoot>
-                <tr style={{ backgroundColor: "#f8f9fa" }}>
-                  <td
-                    colSpan="4"
-                    className="text-end fw-bold"
-                    style={{ fontSize: "20px" }}
-                  >
-                    Total Salaries This Month:
-                  </td>
-                  <td
-                    className="fw-bold"
-                    style={{ fontSize: "20px", color: "#28a745" }}
-                  >
-                    ₹{totalSalaryThisMonth.toLocaleString('en-IN')}
-                  </td>
-                </tr>
-              </tfoot>
-            </Table>
+                  <i className="fas fa-plus me-2"></i>Add Salary
+                </button>
+              </div>
+            </div>
           </div>
-        </Card.Body>
-      </Card>
+        </div>
 
-      {/* Print Instructions */}
-      <Card className="border-secondary mb-4">
-        <Card.Body>
-          <h4 style={{ fontSize: "20px" }}>Need a printed report?</h4>
-          <p style={{ fontSize: "16px" }}>To print this page, press <kbd>Ctrl</kbd> + <kbd>P</kbd> on your keyboard (or <kbd>Cmd</kbd> + <kbd>P</kbd> on Mac).</p>
-        </Card.Body>
-      </Card>
-    </Container>
+        {/* Monthly Summary */}
+        <div className="card shadow-lg border-0 mb-5" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
+          <div className="card-header bg-info text-white border-0 py-3">
+            <h4 className="mb-0 d-flex align-items-center">
+              <i className="fas fa-chart-bar me-2"></i>
+              {monthName} Summary
+            </h4>
+          </div>
+          <div className="card-body text-center py-5">
+            <div className="row g-4">
+              <div className="col-md-4">
+                <div className="p-3">
+                  <i className="fas fa-calendar-alt fa-3x text-info mb-3"></i>
+                  <h3 className="h5 text-muted">Current Month</h3>
+                  <h2 className="h3 fw-bold text-dark">{monthName} 2025</h2>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3">
+                  <i className="fas fa-money-bill-wave fa-3x text-success mb-3"></i>
+                  <h3 className="h5 text-muted">Total Salaries Paid</h3>
+                  <h2 className="display-6 fw-bold text-success">₹{totalSalaryThisMonth.toLocaleString('en-IN')}</h2>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3">
+                  <i className="fas fa-users fa-3x text-primary mb-3"></i>
+                  <h3 className="h5 text-muted">Total Workers</h3>
+                  <h2 className="display-6 fw-bold text-primary">{labourNames.length}</h2>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Salary Records */}
+        <div className="card shadow-lg border-0 mb-5" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
+          <div className="card-header bg-dark text-white border-0 py-3">
+            <h4 className="mb-0 d-flex align-items-center">
+              <i className="fas fa-table me-2"></i>
+              Salary Records
+            </h4>
+          </div>
+          <div className="card-body p-0">
+            <div className="table-responsive">
+              <table className="table table-hover mb-0">
+                <thead style={{ backgroundColor: '#f8f9fa' }}>
+                  <tr>
+                    <th className="py-3 px-4 fw-semibold text-dark border-0">
+                      <i className="fas fa-user me-2"></i>Worker Name
+                    </th>
+                    <th className="py-3 px-4 fw-semibold text-dark border-0">
+                      <i className="fas fa-money-bill me-2"></i>Salary Amount
+                    </th>
+                    <th className="py-3 px-4 fw-semibold text-dark border-0 d-none d-md-table-cell">
+                      <i className="fas fa-calendar-day me-2"></i>Day
+                    </th>
+                    <th className="py-3 px-4 fw-semibold text-dark border-0">
+                      <i className="fas fa-calendar me-2"></i>Date
+                    </th>
+                    <th className="py-3 px-4 fw-semibold text-dark border-0 d-none d-lg-table-cell">
+                      <i className="fas fa-clock me-2"></i>Time
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.keys(salariesByLabour).length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="text-center py-5 text-muted">
+                        <i className="fas fa-inbox fa-3x mb-3 d-block"></i>
+                        <span className="fs-5">No salary records available</span>
+                      </td>
+                    </tr>
+                  ) : (
+                    Object.keys(salariesByLabour).map((labourName, index) =>
+                      salariesByLabour[labourName].map((salary, i) => (
+                        <tr key={`${index}-${i}`} className="border-0">
+                          {i === 0 && (
+                            <td
+                              rowSpan={salariesByLabour[labourName].length}
+                              className="align-middle py-3 px-4 fw-bold border-0"
+                              style={{ backgroundColor: 'rgba(13, 110, 253, 0.1)' }}
+                            >
+                              <div className="d-flex align-items-center">
+                                <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center me-3" style={{ width: '40px', height: '40px' }}>
+                                  <i className="fas fa-user text-white"></i>
+                                </div>
+                                <span className="text-dark">{labourName}</span>
+                              </div>
+                            </td>
+                          )}
+                          <td className="py-3 px-4 fw-bold text-success border-0">
+                            <span className="badge bg-success bg-opacity-10 text-success fs-6 px-3 py-2">
+                              ₹{salary.amount.toLocaleString('en-IN')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-muted border-0 d-none d-md-table-cell">{salary.day}</td>
+                          <td className="py-3 px-4 text-dark border-0">
+                            <span className="badge bg-light text-dark">{salary.date}</span>
+                          </td>
+                          <td className="py-3 px-4 text-muted border-0 d-none d-lg-table-cell">{salary.time}</td>
+                        </tr>
+                      ))
+                    )
+                  )}
+                </tbody>
+                {Object.keys(salariesByLabour).length > 0 && (
+                  <tfoot style={{ backgroundColor: '#f8f9fa' }}>
+                    <tr>
+                      <td colSpan="4" className="text-end fw-bold py-3 px-4 border-0">
+                        <span className="fs-5">Total Salaries This Month:</span>
+                      </td>
+                      <td className="fw-bold py-3 px-4 border-0">
+                        <span className="badge bg-success fs-5 px-3 py-2">
+                          ₹{totalSalaryThisMonth.toLocaleString('en-IN')}
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Print Instructions */}
+        <div className="card shadow-lg border-0" style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)' }}>
+          <div className="card-body p-4">
+            <div className="row align-items-center">
+              <div className="col-md-8">
+                <h5 className="mb-2 d-flex align-items-center text-dark">
+                  <i className="fas fa-print me-2 text-secondary"></i>
+                  Need a printed report?
+                </h5>
+                <p className="mb-0 text-muted">
+                  To print this page, press <span className="badge bg-dark mx-1">Ctrl</span> + <span className="badge bg-dark mx-1">P</span> 
+                  on your keyboard (or <span className="badge bg-dark mx-1">Cmd</span> + <span className="badge bg-dark mx-1">P</span> on Mac).
+                </p>
+              </div>
+              <div className="col-md-4 text-md-end mt-3 mt-md-0">
+                <button className="btn btn-outline-secondary" onClick={() => window.print()}>
+                  <i className="fas fa-print me-2"></i>Print Report
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Font Awesome CDN */}
+      <link 
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" 
+        rel="stylesheet" 
+      />
+    </div>
   );
 }

@@ -49,6 +49,14 @@ function Dashboard() {
       path: "/cake-management"
     },
     {
+      title: "PaymentManagement",
+      description: "Manage cake & pastry orders",
+      icon: BsCake,
+      color: "text-primary",
+      bgColor: "bg-primary-subtle",
+      path: "/PaymentManagement"
+    },
+    {
       title: "List",
       description: "Manage your lists",
       icon: BsListCheck,
