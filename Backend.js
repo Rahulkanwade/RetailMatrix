@@ -170,6 +170,18 @@ app.get('/expenses', authenticateToken, (req, res) => {
 });
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // Get all customers
 app.get("/customers", authenticateToken, (req, res) => {
   const userId = req.user.id;

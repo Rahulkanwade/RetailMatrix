@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-import * as bootstrap from 'bootstrap'; // ✅ required for modal handling
-import { CSVLink } from 'react-csv';     // ✅ used for CSV export
-import jsPDF from 'jspdf';              // ✅ used for PDF export
-import 'jspdf-autotable';
+import * as bootstrap from 'bootstrap';
+
 
 export default function EnhancedSupplierManagement() {
     // Predefined suppliers list
@@ -56,16 +54,12 @@ export default function EnhancedSupplierManagement() {
     // Product inventory state
     const [inventory, setInventory] = useState(commonProducts);
 
-    // Payment history state
-    const [payments, setPayments] = useState([]);
-
     // Form states
     const [newSupplier, setNewSupplier] = useState({
         name: "",
         contact: "",
         address: "",
         products: [],
-        pendingPayments: 0,
         dateAdded: new Date().toISOString().split('T')[0],
         billDate: new Date().toISOString().split('T')[0]
     });
@@ -84,20 +78,7 @@ export default function EnhancedSupplierManagement() {
     const [itemsPerPage, setItemsPerPage] = useState(4);
     const [sortField, setSortField] = useState("name");
     const [sortDirection, setSortDirection] = useState("asc");
-    const [filterCategory, setFilterCategory] = useState("");
-
-    // Payment modal states
-    const [paymentAmount, setPaymentAmount] = useState(0);
-    const [paymentMethod, setPaymentMethod] = useState('cash');
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-
-    // Report states
-    const [reportStartDate, setReportStartDate] = useState(
-        new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
-    );
-    const [reportEndDate, setReportEndDate] = useState(
-        new Date().toISOString().split('T')[0]
-    );
+  
 
     // Product addition states
     const [newProduct, setNewProduct] = useState({
@@ -108,12 +89,7 @@ export default function EnhancedSupplierManagement() {
         category: 1
     });
 
-    // Summary metrics
-    const totalPendingPayments = suppliers.reduce((total, supplier) => total + supplier.pendingPayments, 0);
-    const totalSuppliers = suppliers.length;
-    const totalProducts = inventory.reduce((total, item) => total + item.inventory, 0);
-    const totalPayments = payments.reduce((total, payment) => total + payment.amount, 0);
-
+  
     // Handle contact change with validation
     const handleContactChange = (e) => {
         let value = e.target.value;
@@ -150,7 +126,6 @@ export default function EnhancedSupplierManagement() {
                 contact: supplier.contact,
                 address: supplier.address,
                 products: [],
-                pendingPayments: 0,
                 dateAdded: new Date().toISOString().split('T')[0],
                 billDate: new Date().toISOString().split('T')[0]
             });
@@ -198,7 +173,6 @@ export default function EnhancedSupplierManagement() {
             contact: "",
             address: "",
             products: [],
-            pendingPayments: 0,
             dateAdded: new Date().toISOString().split('T')[0],
             billDate: new Date().toISOString().split('T')[0]
         });
@@ -253,17 +227,11 @@ export default function EnhancedSupplierManagement() {
             return;
         }
 
-        // Use the product without adding bill date to each one (we'll use the supplier's bill date)
         const updatedProducts = [...newSupplier.products, { ...newProduct }];
-
-        // Calculate total pending payment
-        const productTotal = newProduct.price * newProduct.quantity;
-        const newPendingPayments = Number(newSupplier.pendingPayments) + productTotal;
 
         setNewSupplier({
             ...newSupplier,
             products: updatedProducts,
-            pendingPayments: newPendingPayments
         });
 
         // Reset product form
@@ -274,38 +242,6 @@ export default function EnhancedSupplierManagement() {
             price: 0,
             category: 1
         });
-    };
-
-    // Record payment
-    const recordPayment = () => {
-        if (!selectedSupplier || paymentAmount <= 0) {
-            alert("Invalid payment details");
-            return;
-        }
-
-        const payment = {
-            id: Date.now(),
-            supplierId: selectedSupplier.id,
-            supplierName: selectedSupplier.name,
-            amount: paymentAmount,
-            method: paymentMethod,
-            date: paymentDate
-        };
-
-        // Add payment to history
-        setPayments([...payments, payment]);
-
-        // Update supplier's pending payments
-        setSuppliers(suppliers.map(sup =>
-            sup.id === selectedSupplier.id
-                ? { ...sup, pendingPayments: Math.max(0, sup.pendingPayments - paymentAmount) }
-                : sup
-        ));
-
-        // Reset payment states
-        setPaymentAmount(0);
-        setPaymentDate(new Date().toISOString().split('T')[0]);
-        setSelectedSupplier(null);
     };
 
     // Handle product selection or manual entry
@@ -340,7 +276,6 @@ export default function EnhancedSupplierManagement() {
             contact: "",
             address: "",
             products: [],
-            pendingPayments: 0,
             dateAdded: new Date().toISOString().split('T')[0],
             billDate: new Date().toISOString().split('T')[0]
         });
@@ -362,10 +297,6 @@ export default function EnhancedSupplierManagement() {
                     return sortDirection === "asc"
                         ? a.name.localeCompare(b.name)
                         : b.name.localeCompare(a.name);
-                } else if (sortField === "pendingPayments") {
-                    return sortDirection === "asc"
-                        ? a.pendingPayments - b.pendingPayments
-                        : b.pendingPayments - a.pendingPayments;
                 } else if (sortField === "date") {
                     return sortDirection === "asc"
                         ? new Date(a.billDate) - new Date(b.billDate)
@@ -395,71 +326,6 @@ export default function EnhancedSupplierManagement() {
         }
     };
 
-    // Generate filtered payments for reports
-    const getFilteredPayments = () => {
-        return payments.filter(payment => {
-            const paymentDate = new Date(payment.date);
-            const startDate = new Date(reportStartDate);
-            const endDate = new Date(reportEndDate);
-            endDate.setHours(23, 59, 59, 999); // Include the entire end date
-
-            return paymentDate >= startDate && paymentDate <= endDate;
-        });
-    };
-
-    // Export payment report to PDF
-    const exportToPDF = () => {
-        const filteredPayments = getFilteredPayments();
-        const doc = new jsPDF();
-
-        // Add title
-        doc.setFontSize(18);
-        doc.text('Payment Report', 14, 22);
-
-        // Add date range
-        doc.setFontSize(12);
-        doc.text(`From: ${reportStartDate} To: ${reportEndDate}`, 14, 30);
-
-        // Add total
-        const total = filteredPayments.reduce((sum, payment) => sum + payment.amount, 0);
-        doc.text(`Total Amount: ₹${total}`, 14, 38);
-
-        // Create table
-        const tableColumn = ["Date", "Supplier", "Amount", "Method"];
-        const tableRows = [];
-
-        filteredPayments.forEach(payment => {
-            const paymentData = [
-                payment.date,
-                payment.supplierName,
-                `₹${payment.amount}`,
-                payment.method.toUpperCase()
-            ];
-            tableRows.push(paymentData);
-        });
-
-        doc.autoTable({
-            head: [tableColumn],
-            body: tableRows,
-            startY: 45,
-            theme: 'grid',
-            styles: { fontSize: 10 }
-        });
-
-        doc.save(`payment-report-${reportStartDate}-to-${reportEndDate}.pdf`);
-    };
-
-    // CSV data for export
-    const csvData = [
-        ["Date", "Supplier", "Amount", "Method"],
-        ...getFilteredPayments().map(payment => [
-            payment.date,
-            payment.supplierName,
-            payment.amount,
-            payment.method
-        ])
-    ];
-
     // Calculate total purchase value per supplier
     const calculateSupplierValue = (supplier) => {
         return supplier.products.reduce((total, product) => {
@@ -469,52 +335,7 @@ export default function EnhancedSupplierManagement() {
 
     return (
         <div className="container-fluid p-4">
-            {/* Summary Dashboard */}
-            <div className="row mb-4">
-                <div className="col-12">
-                    <div className="card">
-                        <div className="card-header bg-primary text-white">
-                            <h2 className="mb-0">Dashboard Summary</h2>
-                        </div>
-                        <div className="card-body">
-                            <div className="row">
-                                <div className="col-md-3 mb-3">
-                                    <div className="card bg-info text-white h-100">
-                                        <div className="card-body">
-                                            <h5 className="card-title">Total Pending</h5>
-                                            <h2 className="mb-0">₹{totalPendingPayments}</h2>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-3 mb-3">
-                                    <div className="card bg-success text-white h-100">
-                                        <div className="card-body">
-                                            <h5 className="card-title">Total Paid</h5>
-                                            <h2 className="mb-0">₹{totalPayments}</h2>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-3 mb-3">
-                                    <div className="card bg-warning text-dark h-100">
-                                        <div className="card-body">
-                                            <h5 className="card-title">Suppliers</h5>
-                                            <h2 className="mb-0">{totalSuppliers}</h2>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-md-3 mb-3">
-                                    <div className="card bg-secondary text-white h-100">
-                                        <div className="card-body">
-                                            <h5 className="card-title">Inventory Items</h5>
-                                            <h2 className="mb-0">{totalProducts}</h2>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            
 
             <div className="row">
                 <div className="col-md-4">
@@ -588,15 +409,6 @@ export default function EnhancedSupplierManagement() {
                                         placeholder="Address"
                                         value={newSupplier.address}
                                         onChange={(e) => setNewSupplier({ ...newSupplier, address: e.target.value })}
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <input
-                                        className="form-control"
-                                        type="number"
-                                        placeholder="Pending Payments"
-                                        value={newSupplier.pendingPayments}
-                                        onChange={(e) => setNewSupplier({ ...newSupplier, pendingPayments: Number(e.target.value) })}
                                     />
                                 </div>
                                 <div className="mb-3">
@@ -733,11 +545,9 @@ export default function EnhancedSupplierManagement() {
                                                                 className="btn btn-sm btn-danger"
                                                                 onClick={() => {
                                                                     const updatedProducts = newSupplier.products.filter((_, i) => i !== index);
-                                                                    const removedProductValue = product.price * product.quantity;
                                                                     setNewSupplier({
                                                                         ...newSupplier,
                                                                         products: updatedProducts,
-                                                                        pendingPayments: newSupplier.pendingPayments - removedProductValue
                                                                     });
                                                                 }}
                                                             >
@@ -768,115 +578,7 @@ export default function EnhancedSupplierManagement() {
                         </div>
                     </div>
 
-                    {/* Inventory Summary */}
-                    <div className="card mb-4">
-                        <div className="card-header bg-secondary text-white">
-                            <h2 className="mb-0">Inventory Summary</h2>
-                        </div>
-                        <div className="card-body">
-                            <div className="mb-3">
-                                <label className="form-label">Filter by Category</label>
-                                <select
-                                    className="form-select"
-                                    value={filterCategory}
-                                    onChange={(e) => setFilterCategory(e.target.value)}
-                                >
-                                    <option value="">All Categories</option>
-                                    {productCategories.map(category => (
-                                        <option key={category.id} value={category.id}>
-                                            {category.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="table-responsive">
-                                <table className="table table-sm table-striped">
-                                    <thead>
-                                        <tr>
-                                            <th>Product</th>
-                                            <th>Category</th>
-                                            <th>Quantity</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {inventory
-                                            .filter(item => !filterCategory || item.category.toString() === filterCategory)
-                                            .map((item, index) => (
-                                                <tr key={index}>
-                                                    <td>{item.label}</td>
-                                                    <td>
-                                                        {productCategories.find(cat => cat.id === item.category)?.name || 'Other'}
-                                                    </td>
-                                                    <td>{item.inventory}</td>
-                                                </tr>
-                                            ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Payment Report */}
-                    <div className="card mb-4">
-                        <div className="card-header bg-success text-white">
-                            <h2 className="mb-0">Payment Reports</h2>
-                        </div>
-                        <div className="card-body">
-                            <div className="row mb-3">
-                                <div className="col-md-6">
-                                    <label className="form-label">Start Date</label>
-                                    <input
-                                        className="form-control"
-                                        type="date"
-                                        value={reportStartDate}
-                                        onChange={(e) => setReportStartDate(e.target.value)}
-                                    />
-                                </div>
-                                <div className="col-md-6">
-                                    <label className="form-label">End Date</label>
-                                    <input
-                                        className="form-control"
-                                        type="date"
-                                        value={reportEndDate}
-                                        onChange={(e) => setReportEndDate(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="d-flex gap-2 mb-3">
-                                <button className="btn btn-primary" onClick={exportToPDF}>Export PDF</button>
-                                <CSVLink
-                                    data={csvData}
-                                    filename={`payment-report-${reportStartDate}-to-${reportEndDate}.csv`}
-                                    className="btn btn-secondary"
-                                    target="_blank"
-                                >
-                                    Export CSV
-                                </CSVLink>
-                            </div>
-                            <div className="table-responsive">
-                                <table className="table table-sm table-striped">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Supplier</th>
-                                            <th>Amount</th>
-                                            <th>Method</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {getFilteredPayments().map((payment, index) => (
-                                            <tr key={index}>
-                                                <td>{payment.date}</td>
-                                                <td>{payment.supplierName}</td>
-                                                <td>₹{payment.amount}</td>
-                                                <td>{payment.method.toUpperCase()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+                    
                 </div>
 
                 <div className="col-md-8">
@@ -919,8 +621,6 @@ export default function EnhancedSupplierManagement() {
                                     >
                                         <option value="name-asc">Name (A-Z)</option>
                                         <option value="name-desc">Name (Z-A)</option>
-                                        <option value="pendingPayments-asc">Pending (Low-High)</option>
-                                        <option value="pendingPayments-desc">Pending (High-Low)</option>
                                         <option value="date-asc">Date (Old-New)</option>
                                         <option value="date-desc">Date (New-Old)</option>
                                     </select>
@@ -1021,223 +721,6 @@ export default function EnhancedSupplierManagement() {
                                     </ul>
                                 </nav>
                             )}
-                        </div>
-                    </div>
-                    <div className="card mb-4">
-                        <div className="card-header bg-warning text-dark">
-                            <h2 className="mb-0">Record Payment</h2>
-                        </div>
-                        <div className="card-body">
-                            <form>
-                                <div className="mb-3">
-                                    <label className="form-label">Select Supplier</label>
-                                    <select
-                                        className="form-select"
-                                        value={selectedSupplier?.id || ""}
-                                        onChange={(e) => {
-                                            const supplierId = e.target.value;
-                                            const supplier = suppliers.find(s => s.id.toString() === supplierId);
-                                            setSelectedSupplier(supplier || null);
-                                            setPaymentAmount(supplier?.pendingPayments || 0);
-                                        }}
-                                    >
-                                        <option value="">-- Select Supplier --</option>
-                                        {suppliers.map(supplier => (
-                                            <option key={supplier.id} value={supplier.id}>
-                                                {supplier.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {selectedSupplier && (
-                                    <>
-                                        <div className="mb-3">
-                                            <label className="form-label">Outstanding Amount</label>
-                                            <input
-                                                className="form-control"
-                                                type="text"
-                                                value={`₹${selectedSupplier.pendingPayments}`}
-                                                readOnly
-                                            />
-                                        </div>
-
-                                        <div className="mb-3">
-                                            <label className="form-label">Payment Amount</label>
-                                            <input
-                                                className="form-control"
-                                                type="number"
-                                                value={paymentAmount}
-                                                onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                                                max={selectedSupplier.pendingPayments}
-                                                min={0}
-                                            />
-                                        </div>
-
-                                        <div className="mb-3">
-                                            <label className="form-label">Payment Method</label>
-                                            <select
-                                                className="form-select"
-                                                value={paymentMethod}
-                                                onChange={(e) => setPaymentMethod(e.target.value)}
-                                            >
-                                                <option value="cash">Cash</option>
-                                                <option value="upi">UPI</option>
-                                                <option value="bank">Bank Transfer</option>
-                                                <option value="cheque">Cheque</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="mb-3">
-                                            <label className="form-label">Payment Date</label>
-                                            <input
-                                                className="form-control"
-                                                type="date"
-                                                value={paymentDate}
-                                                onChange={(e) => setPaymentDate(e.target.value)}
-                                            />
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            className="btn btn-success"
-                                            onClick={() => {
-                                                if (!selectedSupplier || paymentAmount <= 0) {
-                                                    alert("Enter valid payment");
-                                                    return;
-                                                }
-                                                recordPayment();
-                                                setSelectedSupplier(null);
-                                                setPaymentAmount(0);
-                                            }}
-                                        >
-                                            Record Payment
-                                        </button>
-                                    </>
-                                )}
-                            </form>
-                        </div>
-                    </div>
-
-                    <div className="card mb-4">
-                        <div className="card-header bg-success text-white">
-                            <h2 className="mb-0">Payment History</h2>
-                        </div>
-                        <div className="card-body">
-                            {payments.length === 0 ? (
-                                <p className="text-muted">No payments recorded yet.</p>
-                            ) : (
-                                <div className="table-responsive">
-                                    <table className="table table-striped table-sm">
-                                        <thead>
-                                            <tr>
-                                                <th>#</th>
-                                                <th>Date</th>
-                                                <th>Supplier</th>
-                                                <th>Amount</th>
-                                                <th>Method</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {payments.map((payment, index) => (
-                                                <tr key={payment.id}>
-                                                    <td>{index + 1}</td>
-                                                    <td>{payment.date}</td>
-                                                    <td>{payment.supplierName}</td>
-                                                    <td>₹{payment.amount}</td>
-                                                    <td>{payment.method.toUpperCase()}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-
-            {/* Payment Modal */}
-            <div className="modal fade" id="paymentModal" tabIndex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
-                <div className="modal-dialog">
-                    <div className="modal-content">
-                        <div className="modal-header bg-success text-white">
-                            <h5 className="modal-title" id="paymentModalLabel">Record Payment</h5>
-                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div className="modal-body">
-                            {selectedSupplier && (
-                                <form>
-                                    <div className="mb-3">
-                                        <label className="form-label">Supplier</label>
-                                        <input
-                                            className="form-control"
-                                            type="text"
-                                            value={selectedSupplier.name}
-                                            readOnly
-                                        />
-                                    </div>
-                                    <div className="mb-3">
-                                        <label className="form-label">Outstanding Amount</label>
-                                        <input
-                                            className="form-control"
-                                            type="text"
-                                            value={`₹${selectedSupplier.pendingPayments}`}
-                                            readOnly
-                                        />
-                                    </div>
-                                    <div className="mb-3">
-                                        <label className="form-label">Payment Amount</label>
-                                        <input
-                                            className="form-control"
-                                            type="number"
-                                            value={paymentAmount}
-                                            onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                                            max={selectedSupplier.pendingPayments}
-                                        />
-                                    </div>
-                                    <div className="mb-3">
-                                        <label className="form-label">Payment Method</label>
-                                        <select
-                                            className="form-select"
-                                            value={paymentMethod}
-                                            onChange={(e) => setPaymentMethod(e.target.value)}
-                                        >
-                                            <option value="cash">Cash</option>
-                                            <option value="upi">UPI</option>
-                                            <option value="bank">Bank Transfer</option>
-                                            <option value="cheque">Cheque</option>
-                                        </select>
-                                    </div>
-                                    <div className="mb-3">
-                                        <label className="form-label">Payment Date</label>
-                                        <input
-                                            className="form-control"
-                                            type="date"
-                                            value={paymentDate}
-                                            onChange={(e) => setPaymentDate(e.target.value)}
-                                        />
-                                    </div>
-                                </form>
-                            )}
-                        </div>
-                        <div className="modal-footer">
-                            <button type="button" className="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button
-                                type="button"
-                                className="btn btn-success"
-                                onClick={() => {
-                                    recordPayment();
-                                    // Close modal using bootstrap
-                                    const modal = document.getElementById('paymentModal');
-                                    const bsModal = bootstrap.Modal.getInstance(modal);
-                                    if (bsModal) bsModal.hide(); // ✅ prevent crash if modal is not open
-
-                                }}
-                            >
-                                Record Payment
-                            </button>
                         </div>
                     </div>
                 </div>
