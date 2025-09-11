@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
-
-import * as bootstrap from 'bootstrap';
-
-
+import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 export default function EnhancedSupplierManagement() {
-    // Predefined suppliers list
+    // State management
+    const [suppliers, setSuppliers] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [loadingProducts, setLoadingProducts] = useState(false);
+
+    // Predefined suppliers list (for reference/quick add)
     const predefinedSuppliers = [
         {
             id: 1,
@@ -27,10 +30,6 @@ export default function EnhancedSupplierManagement() {
         }
     ];
 
-    // Initial state for suppliers
-    const [suppliers, setSuppliers] = useState([]);
-    const [availableSuppliers] = useState(predefinedSuppliers);
-
     // Product categories
     const productCategories = [
         { id: 1, name: "खाद्य सामग्री (Food Items)" },
@@ -40,19 +39,16 @@ export default function EnhancedSupplierManagement() {
         { id: 5, name: "अन्य (Other)" }
     ];
 
-    // Common products in Marathi with English translations and categories
+    // Common products
     const commonProducts = [
-        { value: "मैदा (Flour)", label: "मैदा (Flour)", category: 1, inventory: 0 },
-        { value: "साखर (Sugar)", label: "साखर (Sugar)", category: 1, inventory: 0 },
-        { value: "तेल (Oil)", label: "तेल (Oil)", category: 1, inventory: 0 },
-        { value: "बेकिंग पाउडर (Baking Powder)", label: "बेकिंग पाउडर (Baking Powder)", category: 1, inventory: 0 },
-        { value: "डिब्बे (Containers)", label: "डिब्बे (Containers)", category: 2, inventory: 0 },
-        { value: "दूध (Milk)", label: "दूध (Milk)", category: 3, inventory: 0 },
-        { value: "इलायची (Cardamom)", label: "इलायची (Cardamom)", category: 4, inventory: 0 },
+        { value: "मैदा (Flour)", label: "मैदा (Flour)", category: 1 },
+        { value: "साखर (Sugar)", label: "साखर (Sugar)", category: 1 },
+        { value: "तेल (Oil)", label: "तेल (Oil)", category: 1 },
+        { value: "बेकिंग पाउडर (Baking Powder)", label: "बेकिंग पाउडर (Baking Powder)", category: 1 },
+        { value: "डिब्बे (Containers)", label: "डिब्बे (Containers)", category: 2 },
+        { value: "दूध (Milk)", label: "दूध (Milk)", category: 3 },
+        { value: "इलायची (Cardamom)", label: "इलायची (Cardamom)", category: 4 },
     ];
-
-    // Product inventory state
-    const [inventory, setInventory] = useState(commonProducts);
 
     // Form states
     const [newSupplier, setNewSupplier] = useState({
@@ -60,7 +56,6 @@ export default function EnhancedSupplierManagement() {
         contact: "",
         address: "",
         products: [],
-        dateAdded: new Date().toISOString().split('T')[0],
         billDate: new Date().toISOString().split('T')[0]
     });
 
@@ -72,13 +67,12 @@ export default function EnhancedSupplierManagement() {
     const [selectedExistingSupplier, setSelectedExistingSupplier] = useState("");
     const [contactError, setContactError] = useState("");
 
-    // New states for advanced features
+    // Advanced features states
     const [searchTerm, setSearchTerm] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(4);
     const [sortField, setSortField] = useState("name");
     const [sortDirection, setSortDirection] = useState("asc");
-  
 
     // Product addition states
     const [newProduct, setNewProduct] = useState({
@@ -89,27 +83,142 @@ export default function EnhancedSupplierManagement() {
         category: 1
     });
 
-  
+    // API Base URL
+    const API_BASE = 'http://localhost:5000';
+
+    // API helper function
+    const apiCall = async (endpoint, options = {}) => {
+        try {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                credentials: 'include', // Important for cookie-based auth
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                ...options
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('API call error:', error);
+            throw error;
+        }
+    };
+
+    // Load suppliers on component mount
+    useEffect(() => {
+        loadSuppliers();
+    }, []);
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadData = async () => {
+            if (!isMounted) return;
+
+            try {
+                setLoading(true);
+                setError("");
+                const data = await apiCall('/suppliers');
+                if (isMounted) {
+                    setSuppliers(data);
+                }
+            } catch (error) {
+                if (isMounted) {
+                    setError(`Failed to load suppliers: ${error.message}`);
+                }
+            } finally {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        loadData();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+    // Load suppliers from backend
+    const loadSuppliers = async () => {
+        try {
+            setLoading(true);
+            setError("");
+            const data = await apiCall('/suppliers');
+
+            // If the API doesn't return products with each supplier, fetch them individually
+            const suppliersWithProducts = await Promise.all(
+                data.map(async (supplier) => {
+                    try {
+                        const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
+                        return {
+                            ...supplier,
+                            products: Array.isArray(productsData) ? productsData : []
+                        };
+                    } catch (error) {
+                        console.warn(`Could not load products for supplier ${supplier.id}:`, error);
+                        return {
+                            ...supplier,
+                            products: []
+                        };
+                    }
+                })
+            );
+
+            setSuppliers(suppliersWithProducts);
+        } catch (error) {
+            setError(`Failed to load suppliers: ${error.message}`);
+            console.error('Error loading suppliers:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    
+    // 5. Safer date handling
+    const formatDateForInput = (dateString) => {
+        if (!dateString) return new Date().toISOString().split('T')[0];
+
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) {
+                return new Date().toISOString().split('T')[0];
+            }
+            return date.toISOString().split('T')[0];
+        } catch {
+            return new Date().toISOString().split('T')[0];
+        }
+    };
     // Handle contact change with validation
     const handleContactChange = (e) => {
         let value = e.target.value;
 
-        // Ensure it starts with +91
-        if (!value.startsWith("+91")) {
-            value = "+91" + value.replace(/\D/g, ""); // Remove non-numeric characters and enforce +91
+        // Remove all non-digit characters except +
+        const cleanValue = value.replace(/[^\d+]/g, '');
+
+        // Ensure it starts with +91 and limit to 13 characters
+        if (!cleanValue.startsWith("+91")) {
+            value = "+91" + cleanValue.replace(/\+/g, '');
         } else {
-            value = "+91" + value.slice(3).replace(/\D/g, ""); // Keep +91 and allow only numbers after it
+            value = cleanValue;
         }
 
-        // Restrict input to exactly 10 digits after +91
+        // Limit to +91 + 10 digits
         if (value.length > 13) {
             value = value.slice(0, 13);
         }
 
         setNewSupplier({ ...newSupplier, contact: value });
 
-        if (value.length < 13) {
-            setContactError("Contact number must be 10 digits.");
+        // Validate: must be exactly +91 followed by 10 digits
+        const phoneRegex = /^\+91\d{10}$/;
+        if (!phoneRegex.test(value)) {
+            setContactError("Contact number must be +91 followed by 10 digits.");
         } else {
             setContactError("");
         }
@@ -119,111 +228,163 @@ export default function EnhancedSupplierManagement() {
     const handleExistingSupplierSelection = (supplierId) => {
         if (!supplierId) return;
 
-        const supplier = availableSuppliers.find(s => s.id.toString() === supplierId);
+        const supplier = predefinedSuppliers.find(s => s.id.toString() === supplierId);
         if (supplier) {
             setNewSupplier({
                 name: supplier.name,
                 contact: supplier.contact,
                 address: supplier.address,
                 products: [],
-                dateAdded: new Date().toISOString().split('T')[0],
                 billDate: new Date().toISOString().split('T')[0]
             });
         }
     };
 
-    // Add supplier
-    const addSupplier = () => {
+    // Add or update supplier
+    const addSupplier = async () => {
         // Validation
         if (!newSupplier.name.trim()) {
-            alert("Supplier name is required");
+            setError("Supplier name is required");
             return;
         }
         if (!newSupplier.contact.trim()) {
-            alert("Contact number is required");
+            setError("Contact number is required");
+            return;
+        }
+        if (contactError) {
+            setError("Please fix contact number format");
             return;
         }
 
-        if (isEditing && selectedSupplier) {
-            // Update existing supplier
-            setSuppliers(suppliers.map(sup =>
-                sup.id === selectedSupplier.id
-                    ? { ...newSupplier, id: selectedSupplier.id }
-                    : sup
-            ));
-            setIsEditing(false);
-            setSelectedSupplier(null);
-        } else {
-            // Add new supplier
-            const newSupplierWithId = {
-                ...newSupplier,
-                id: Date.now()
+        try {
+            setLoading(true);
+            setError("");
+
+            const supplierData = {
+                name: newSupplier.name.trim(),
+                contact: newSupplier.contact,
+                address: newSupplier.address || "",
+                billDate: newSupplier.billDate,
+                products: newSupplier.products
             };
-            setSuppliers([...suppliers, newSupplierWithId]);
-        }
 
-        // Update inventory for each product
-        if (newSupplier.products.length > 0) {
-            updateInventory(newSupplier.products);
-        }
-
-        // Reset form
-        setNewSupplier({
-            name: "",
-            contact: "",
-            address: "",
-            products: [],
-            dateAdded: new Date().toISOString().split('T')[0],
-            billDate: new Date().toISOString().split('T')[0]
-        });
-        setSelectedExistingSupplier("");
-        setUseExistingSupplier(false);
-    };
-
-    // Update inventory when adding products
-    const updateInventory = (products) => {
-        const updatedInventory = [...inventory];
-
-        products.forEach(product => {
-            const existingIndex = updatedInventory.findIndex(
-                item => item.value === product.name
-            );
-
-            if (existingIndex !== -1) {
-                updatedInventory[existingIndex].inventory += Number(product.quantity);
+            if (isEditing && selectedSupplier) {
+                // Update existing supplier
+                await apiCall(`/suppliers/${selectedSupplier.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(supplierData)
+                });
+                setIsEditing(false);
+                setSelectedSupplier(null);
             } else {
-                // Find category or default to "Other"
-                const categoryId = product.category || 5;
-                updatedInventory.push({
-                    value: product.name,
-                    label: product.name,
-                    category: categoryId,
-                    inventory: Number(product.quantity)
+                // Add new supplier
+                await apiCall('/suppliers', {
+                    method: 'POST',
+                    body: JSON.stringify(supplierData)
                 });
             }
-        });
 
-        setInventory(updatedInventory);
+            // Reset form
+            setNewSupplier({
+                name: "",
+                contact: "",
+                address: "",
+                products: [],
+                billDate: new Date().toISOString().split('T')[0]
+            });
+            setSelectedExistingSupplier("");
+            setUseExistingSupplier(false);
+
+            // Reload suppliers
+            await loadSuppliers();
+
+        } catch (error) {
+            setError(`Failed to ${isEditing ? 'update' : 'add'} supplier: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
     };
 
     // Delete supplier
-    const deleteSupplier = (supplierId) => {
-        if (window.confirm("Are you sure you want to delete this supplier?")) {
-            setSuppliers(suppliers.filter(sup => sup.id !== supplierId));
+    const deleteSupplier = async (supplierId) => {
+        if (!window.confirm("Are you sure you want to delete this supplier?")) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+            setError("");
+            await apiCall(`/suppliers/${supplierId}`, {
+                method: 'DELETE'
+            });
+            await loadSuppliers();
+        } catch (error) {
+            setError(`Failed to delete supplier: ${error.message}`);
+        } finally {
+            setLoading(false);
         }
     };
 
+
+    const removeProductFromEdit = (productIndex) => {
+    const updatedProducts = newSupplier.products.filter((_, index) => index !== productIndex);
+    setNewSupplier({
+        ...newSupplier,
+        products: updatedProducts
+    });
+};
     // Edit supplier
-    const editSupplier = (supplier) => {
-        setNewSupplier({ ...supplier });
-        setIsEditing(true);
-        setSelectedSupplier(supplier);
+    // Replace your existing editSupplier function with this improved version
+    const editSupplier = async (supplier) => {
+        try {
+            setLoading(true);
+            setError("");
+
+            // First, try to fetch the complete supplier data including products
+            let supplierWithProducts;
+            try {
+                supplierWithProducts = await apiCall(`/suppliers/${supplier.id}`);
+            } catch (error) {
+                console.warn('Could not fetch detailed supplier data, using existing data:', error);
+                supplierWithProducts = supplier;
+            }
+
+            // Ensure products is always an array
+            const products = Array.isArray(supplierWithProducts.products) ? supplierWithProducts.products : [];
+
+            console.log('Editing supplier with products:', products); // Debug log
+
+            // Format the date properly for the input field
+            const formattedDate = supplierWithProducts.billDate
+                ? new Date(supplierWithProducts.billDate).toISOString().split('T')[0]
+                : new Date().toISOString().split('T')[0];
+
+            // Set the form data with all supplier information
+            setNewSupplier({
+                name: supplierWithProducts.name || "",
+                contact: supplierWithProducts.contact || "",
+                address: supplierWithProducts.address || "",
+                billDate: formattedDate,
+                products: products
+            });
+
+            setIsEditing(true);
+            setSelectedSupplier(supplierWithProducts);
+            setContactError(""); // Clear any contact errors
+
+        } catch (error) {
+            setError(`Failed to load supplier for editing: ${error.message}`);
+            console.error('Error in editSupplier:', error);
+        } finally {
+            setLoading(false);
+        }
     };
+
 
     // Add product to supplier
     const addProduct = () => {
         if (!newProduct.name.trim() || newProduct.quantity <= 0 || newProduct.price <= 0) {
-            alert("Please enter valid product details including price");
+            setError("Please enter valid product details including price");
             return;
         }
 
@@ -242,6 +403,7 @@ export default function EnhancedSupplierManagement() {
             price: 0,
             category: 1
         });
+        setError("");
     };
 
     // Handle product selection or manual entry
@@ -276,7 +438,6 @@ export default function EnhancedSupplierManagement() {
             contact: "",
             address: "",
             products: [],
-            dateAdded: new Date().toISOString().split('T')[0],
             billDate: new Date().toISOString().split('T')[0]
         });
         setSelectedExistingSupplier("");
@@ -287,9 +448,8 @@ export default function EnhancedSupplierManagement() {
         return suppliers
             .filter(supplier => {
                 const matchesSearch = supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    supplier.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (supplier.address && supplier.address.toLowerCase().includes(searchTerm.toLowerCase())) ||
                     supplier.contact.includes(searchTerm);
-
                 return matchesSearch;
             })
             .sort((a, b) => {
@@ -326,16 +486,63 @@ export default function EnhancedSupplierManagement() {
         }
     };
 
-    // Calculate total purchase value per supplier
+    // 6. Consistent product array handling
     const calculateSupplierValue = (supplier) => {
-        return supplier.products.reduce((total, product) => {
-            return total + (product.price * product.quantity);
+        const products = supplier?.products;
+        if (!Array.isArray(products)) return 0;
+
+        return products.reduce((total, product) => {
+            const price = Number(product.price) || 0;
+            const quantity = Number(product.quantity) || 0;
+            return total + (price * quantity);
         }, 0);
     };
 
+
+    const fetchSupplierProducts = async (supplier) => {
+        try {
+            setLoadingProducts(true);
+            setError("");
+
+            // Set supplier first to show modal
+            setSelectedSupplier(supplier);
+
+            const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
+
+            // Only update products, preserve other supplier data
+            setSelectedSupplier(prev => ({
+                ...prev,
+                products: Array.isArray(productsData) ? productsData : []
+            }));
+
+        } catch (error) {
+            setError(`Failed to load products: ${error.message}`);
+            setSelectedSupplier(null);
+        } finally {
+            setLoadingProducts(false);
+        }
+    };
+
+
+
     return (
         <div className="container-fluid p-4">
-            
+            {/* Error Display */}
+            {error && (
+                <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                    {error}
+                    <button type="button" className="btn-close" onClick={() => setError("")}></button>
+                </div>
+            )}
+
+            {/* Loading Indicator */}
+            {loading && (
+                <div className="text-center mb-3">
+                    <div className="spinner-border" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            )}
 
             <div className="row">
                 <div className="col-md-4">
@@ -359,7 +566,7 @@ export default function EnhancedSupplierManagement() {
                         </div>
                         <div className="card-body">
                             <form>
-                                {useExistingSupplier ? (
+                                {useExistingSupplier && !isEditing && (
                                     <div className="mb-3">
                                         <label className="form-label">Select Supplier</label>
                                         <select
@@ -371,14 +578,14 @@ export default function EnhancedSupplierManagement() {
                                             }}
                                         >
                                             <option value="">-- Select Supplier --</option>
-                                            {availableSuppliers.map((supplier) => (
+                                            {predefinedSuppliers.map((supplier) => (
                                                 <option key={supplier.id} value={supplier.id}>
                                                     {supplier.name}
                                                 </option>
                                             ))}
                                         </select>
                                     </div>
-                                ) : null}
+                                )}
 
                                 <div className="mb-3">
                                     <input
@@ -527,43 +734,37 @@ export default function EnhancedSupplierManagement() {
                                             Add Product
                                         </button>
 
-                                        {/* Display added products before submitting */}
-                                        {newSupplier.products.length > 0 && newSupplier.products.every(p => p.name && p.quantity > 0 && p.price > 0) && (
-                                            <div className="mt-3">
-
-                                                <h6>Added Products:</h6>
-                                                <ul className="list-group">
-                                                    {newSupplier.products.map((product, index) => (
-                                                        <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
-                                                            <div>
-                                                                {product.name} - {product.quantity} {product.unit} @ ₹{product.price}/unit
-                                                                <div className="small text-muted">
-                                                                    Total: ₹{product.price * product.quantity}
-                                                                </div>
-                                                            </div>
-                                                            <button
-                                                                className="btn btn-sm btn-danger"
-                                                                onClick={() => {
-                                                                    const updatedProducts = newSupplier.products.filter((_, i) => i !== index);
-                                                                    setNewSupplier({
-                                                                        ...newSupplier,
-                                                                        products: updatedProducts,
-                                                                    });
-                                                                }}
-                                                            >
-                                                                ×
-                                                            </button>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                                <div className="mt-2 text-end">
-                                                    <strong>Total Value: ₹{
-                                                        newSupplier.products.reduce((total, product) =>
-                                                            total + (product.price * product.quantity), 0)
-                                                    }</strong>
-                                                </div>
-                                            </div>
-                                        )}
+                                        {/* Display added products */}
+                                        {newSupplier.products.length > 0 && (
+    <div className="mt-3">
+        <h6>{isEditing ? 'Current Products:' : 'Added Products:'}</h6>
+        <ul className="list-group">
+            {newSupplier.products.map((product, index) => (
+                <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{product.name}</strong> - {product.quantity} {product.unit} @ ₹{product.price}/unit
+                        <div className="small text-muted">
+                            Category: {productCategories.find(cat => cat.id === product.category)?.name || 'Other'}
+                            <br />
+                            Total: ₹{product.price * product.quantity}
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={() => removeProductFromEdit(index)}
+                        title="Remove this product"
+                    >
+                        ×
+                    </button>
+                </li>
+            ))}
+        </ul>
+        <div className="mt-2 text-end">
+            <strong>Total Value: ₹{calculateSupplierValue(newSupplier)}</strong>
+        </div>
+    </div>
+)}
                                     </div>
                                 </div>
 
@@ -571,21 +772,20 @@ export default function EnhancedSupplierManagement() {
                                     type="button"
                                     className={`btn ${isEditing ? 'btn-warning' : 'btn-success'} w-100`}
                                     onClick={addSupplier}
+                                    disabled={loading}
                                 >
-                                    {isEditing ? "Update Supplier" : "Add Supplier"}
+                                    {loading ? 'Processing...' : (isEditing ? "Update Supplier" : "Add Supplier")}
                                 </button>
                             </form>
                         </div>
                     </div>
-
-                    
                 </div>
 
                 <div className="col-md-8">
                     {/* Supplier List */}
                     <div className="card mb-4">
                         <div className="card-header bg-primary text-white">
-                            <h2 className="mb-0">Suppliers</h2>
+                            <h2 className="mb-0">Suppliers ({suppliers.length})</h2>
                         </div>
                         <div className="card-body">
                             <div className="row mb-3">
@@ -631,57 +831,65 @@ export default function EnhancedSupplierManagement() {
                                 <table className="table table-striped table-hover">
                                     <thead>
                                         <tr>
-                                            <th onClick={() => handleSort("name")}>Supplier Name {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}</th>
+                                            <th onClick={() => handleSort("name")} style={{ cursor: 'pointer' }}>
+                                                Supplier Name {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}
+                                            </th>
                                             <th>Contact</th>
                                             <th>Address</th>
-                                            <th onClick={() => handleSort("date")}>Bill Date {sortField === "date" && (sortDirection === "asc" ? "↑" : "↓")}</th>
+                                            <th onClick={() => handleSort("date")} style={{ cursor: 'pointer' }}>
+                                                Bill Date {sortField === "date" && (sortDirection === "asc" ? "↑" : "↓")}
+                                            </th>
+                                            <th>Products</th>
                                             <th>Total Bill</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
-
-
                                     <tbody>
-                                        {currentSuppliers.map(supplier => (
-                                            <tr key={supplier.id}>
-                                                <td>{supplier.name}</td>
-                                                <td>{supplier.contact}</td>
-                                                <td>{supplier.address}</td>
-
-                                                <td>{supplier.billDate}</td>
-                                                <td>
-                                                    ₹{calculateSupplierValue(supplier)}
-                                                </td>
-
-                                                <td>
-                                                    <div className="d-flex gap-1">
-                                                        <button
-                                                            className="btn btn-sm btn-warning"
-                                                            onClick={() => editSupplier(supplier)}
-                                                        >
-                                                            Edit
-                                                        </button>
-
-                                                        <button
-                                                            className="btn btn-sm btn-danger"
-                                                            onClick={() => deleteSupplier(supplier.id)}
-                                                        >
-                                                            Delete
-                                                        </button>
-
-                                                        <button
-                                                            className="btn btn-sm btn-info"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#productsModal"
-                                                            onClick={() => setSelectedSupplier(supplier)}
-                                                        >
-                                                            View Products
-                                                        </button>
-                                                    </div>
-
+                                        {currentSuppliers.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="7" className="text-center">
+                                                    {loading ? "Loading..." : "No suppliers found"}
                                                 </td>
                                             </tr>
-                                        ))}
+                                        ) : (
+                                            currentSuppliers.map(supplier => (
+                                                <tr key={supplier.id}>
+                                                    <td>{supplier.name}</td>
+                                                    <td>{supplier.contact}</td>
+                                                    <td>{supplier.address || 'N/A'}</td>
+                                                    <td>{supplier.billDate}</td>
+                                                    <td>{supplier.productCount || supplier.products?.length || 0}</td>
+                                                    <td>₹{supplier.totalValue || calculateSupplierValue(supplier)}</td>
+                                                    <td>
+                                                        <div className="d-flex gap-1">
+                                                            <button
+                                                                className="btn btn-sm btn-warning"
+                                                                onClick={() => editSupplier(supplier)}
+                                                                disabled={loading}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-sm btn-danger"
+                                                                onClick={() => deleteSupplier(supplier.id)}
+                                                                disabled={loading}
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-sm btn-info"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#productsModal"
+                                                                onClick={() => fetchSupplierProducts(supplier)}
+                                                                disabled={loadingProducts}
+                                                            >
+                                                                View Products
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -735,55 +943,71 @@ export default function EnhancedSupplierManagement() {
                             <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div className="modal-body">
-                            {selectedSupplier && (
-                                <>
-                                    <div className="mb-3">
-                                        <h4>{selectedSupplier.name}</h4>
-                                        <p className="text-muted">{selectedSupplier.contact} | {selectedSupplier.address}</p>
-                                        <div className="d-flex justify-content-between">
-                                            <p><strong>Bill Date:</strong> {selectedSupplier.billDate}</p>
-                                            <p><strong>Total Value:</strong> ₹{calculateSupplierValue(selectedSupplier)}</p>
+                            {loadingProducts ? (
+                                <div className="text-center">
+                                    <div className="spinner-border" role="status">
+                                        <span className="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p>Loading products...</p>
+                                </div>
+                            ) : (
+                                selectedSupplier && (
+                                    <>
+                                        <div className="mb-3">
+                                            <h4>{selectedSupplier.name}</h4>
+                                            <p className="text-muted">{selectedSupplier.contact} | {selectedSupplier.address}</p>
+                                            <div className="d-flex justify-content-between">
+                                                <p><strong>Bill Date:</strong> {selectedSupplier.billDate}</p>
+                                                <p><strong>Total Value:</strong> ₹{calculateSupplierValue(selectedSupplier)}</p>
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <h5>Products</h5>
-                                    <div className="table-responsive">
-                                        <table className="table table-striped">
-                                            <thead>
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>Product</th>
-                                                    <th>Category</th>
-                                                    <th>Quantity</th>
-                                                    <th>Unit</th>
-                                                    <th>Price/Unit</th>
-                                                    <th>Total</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {selectedSupplier.products.map((product, index) => (
-                                                    <tr key={index}>
-                                                        <td>{index + 1}</td>
-                                                        <td>{product.name}</td>
-                                                        <td>
-                                                            {productCategories.find(cat => cat.id === product.category)?.name || 'Other'}
-                                                        </td>
-                                                        <td>{product.quantity}</td>
-                                                        <td>{product.unit}</td>
-                                                        <td>₹{product.price}</td>
-                                                        <td>₹{product.price * product.quantity}</td>
+                                        <h5>Products</h5>
+                                        <div className="table-responsive">
+                                            <table className="table table-striped">
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Product</th>
+                                                        <th>Category</th>
+                                                        <th>Quantity</th>
+                                                        <th>Unit</th>
+                                                        <th>Price/Unit</th>
+                                                        <th>Total</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                            <tfoot>
-                                                <tr>
-                                                    <td colSpan="6" className="text-end"><strong>Total</strong></td>
-                                                    <td><strong>₹{calculateSupplierValue(selectedSupplier)}</strong></td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                    </div>
-                                </>
+                                                </thead>
+                                                <tbody>
+                                                    {/* Use conditional rendering to handle an empty products array */}
+                                                    {Array.isArray(selectedSupplier.products) && selectedSupplier.products.length > 0 ? (
+                                                        selectedSupplier.products.map((product, index) => (
+                                                            <tr key={index}>
+                                                                <td>{index + 1}</td>
+                                                                <td>{product.name}</td>
+                                                                <td>
+                                                                    {productCategories.find(cat => cat.id === product.category)?.name || 'Other'}
+                                                                </td>
+                                                                <td>{product.quantity}</td>
+                                                                <td>{product.unit}</td>
+                                                                <td>₹{product.price}</td>
+                                                                <td>₹{product.price * product.quantity}</td>
+                                                            </tr>
+                                                        ))
+                                                    ) : (
+                                                        <tr>
+                                                            <td colSpan="7" className="text-center">No products found for this supplier.</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr>
+                                                        <td colSpan="6" className="text-end"><strong>Total</strong></td>
+                                                        <td><strong>₹{calculateSupplierValue(selectedSupplier)}</strong></td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    </>
+                                )
                             )}
                         </div>
                         <div className="modal-footer">

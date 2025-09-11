@@ -10,6 +10,7 @@ import Salary from './pages/Salary';
 import Supplier from './pages/Supplier';
 import About from './pages/About';
 import Borrow from './pages/Borrow';
+import Pav from './pages/Pav';
 import PaymentManagement from './pages/PaymentManagement';
 import axios from "axios";
 
@@ -48,6 +49,8 @@ function App() {
         <Route path="/About" element={<About />} />
         <Route path="/Borrow" element={<Borrow/>} />
         <Route path="/PaymentManagement" element={<PaymentManagement/>} />
+        <Route path="/Pav" element={<Pav/>} />
+        
       </Routes>
     </Router>
   );

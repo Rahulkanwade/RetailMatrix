@@ -3,7 +3,8 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { Container, Row, Col, Card, Badge, Spinner, Alert } from 'react-bootstrap';
-import { BsCake, BsListCheck, BsCashCoin, BsWallet, BsTruck } from 'react-icons/bs';
+import { BsCake, BsListCheck, BsCashCoin, BsWallet, BsTruck, BsCreditCard } from 'react-icons/bs';
+import './Dashboard.css'; // Import the CSS file
 
 function Dashboard() {
   const [user, setUser] = useState(null);
@@ -42,66 +43,77 @@ function Dashboard() {
   const dashboardItems = [
     {
       title: "Cake Management",
-      description: "Manage cake & pastry orders",
+      description: "Manage cake & pastry orders efficiently",
       icon: BsCake,
-      color: "text-primary",
-      bgColor: "bg-primary-subtle",
-      path: "/cake-management"
+      gradient: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      path: "/cake-management",
+      count: "24"
     },
     {
-      title: "PaymentManagement",
-      description: "Manage cake & pastry orders",
-      icon: BsCake,
-      color: "text-primary",
-      bgColor: "bg-primary-subtle",
-      path: "/PaymentManagement"
+      title: "Payment Management",
+      description: "Handle all payment transactions",
+      icon: BsCreditCard,
+      gradient: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+      path: "/PaymentManagement",
+      count: "12"
     },
     {
-      title: "List",
-      description: "Manage your lists",
+      title: "Lists",
+      description: "Organize and manage your lists",
       icon: BsListCheck,
-      color: "text-success",
-      bgColor: "bg-success-subtle",
-      path: "/List"
+      gradient: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+      path: "/List",
+      count: "8"
     },
     {
-      title: "Expense",
-      description: "Manage expenses and borrowing",
+      title: "Pav Management",
+      description: "Track pav production and sales",
       icon: BsCashCoin,
-      color: "text-danger",
-      bgColor: "bg-danger-subtle",
-      path: "/Expense"
+      gradient: "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+      path: "/Pav",
+      count: "156"
     },
     {
-      title: "Salary",
-      description: "Manage salary and payments",
+      title: "Expenses",
+      description: "Monitor expenses and budgets",
+      icon: BsCashCoin,
+      gradient: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+      path: "/Expense",
+      count: "₹45,280"
+    },
+    {
+      title: "Salary Management",
+      description: "Handle employee salaries",
       icon: BsWallet,
-      color: "text-warning",
-      bgColor: "bg-warning-subtle",
-      path: "/Salary"
+      gradient: "linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)",
+      path: "/Salary",
+      count: "15"
     },
     {
-      title: "Supplier",
-      description: "Manage supplier information",
+      title: "Supplier Network",
+      description: "Manage supplier relationships",
       icon: BsTruck,
-      color: "text-info",
-      bgColor: "bg-info-subtle",
-      path: "/Supplier"
+      gradient: "linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)",
+      path: "/Supplier",
+      count: "8"
     },
     {
-      title: "Borrow",
-      description: "Manage supplier information",
+      title: "Borrowing",
+      description: "Track loans and borrowings",
       icon: BsTruck,
-      color: "text-info",
-      bgColor: "bg-info-subtle",
-      path: "/Borrow"
+      gradient: "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)",
+      path: "/Borrow",
+      count: "3"
     }
   ];
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center min-vh-100">
-        <Spinner animation="border" variant="primary" />
+      <div className="loading-container">
+        <div className="loading-spinner">
+          <Spinner animation="border" variant="primary" size="lg" />
+          <p className="mt-3 text-muted">Loading your dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -109,7 +121,8 @@ function Dashboard() {
   if (error) {
     return (
       <Container className="mt-5">
-        <Alert variant="danger" className="text-center">
+        <Alert variant="danger" className="text-center error-alert">
+          <h5>Oops! Something went wrong</h5>
           {error}
         </Alert>
       </Container>
@@ -117,128 +130,137 @@ function Dashboard() {
   }
 
   return (
-    <>
+    <div className="dashboard-wrapper">
       <Navbar user={user} handleLogout={handleLogout} />
       
-      <Container className="mt-5">
-        {/* Welcome Section */}
-        <div className="text-center mb-5">
-          <h1 className="display-4 fw-bold text-primary mb-3">
-            Welcome to Your Dashboard
-          </h1>
-          {user && (
-            <p className="lead text-muted">
-              Hello, <Badge bg="primary" className="fs-6">{user.name || user.email}</Badge>
-            </p>
-          )}
-          <hr className="my-4" />
+      <Container fluid className="dashboard-container">
+        {/* Hero Section */}
+        <div className="hero-section">
+          <div className="hero-content">
+            <div className="welcome-text">
+              <h1 className="hero-title">
+                Welcome Back!
+              </h1>
+              {user && (
+                <p className="hero-subtitle">
+                  Hello <Badge bg="primary" className="user-badge">{user.name || user.email}</Badge>, 
+                  ready to manage your business?
+                </p>
+              )}
+            </div>
+            <div className="hero-decoration">
+              <div className="floating-shape shape-1"></div>
+              <div className="floating-shape shape-2"></div>
+              <div className="floating-shape shape-3"></div>
+            </div>
+          </div>
         </div>
 
-        {/* Dashboard Cards */}
-        <Row className="justify-content-center g-4">
-          {dashboardItems.map((item, index) => {
-            const IconComponent = item.icon;
-            return (
-              <Col xs={12} sm={6} md={4} lg={3} key={index}>
-                <Card
-                  className="text-center shadow-sm h-100 border-0 dashboard-card"
-                  style={{ 
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease',
-                    borderRadius: '15px'
-                  }}
-                  onClick={() => navigate(item.path)}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-5px)';
-                    e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-                  }}
-                >
-                  <Card.Body className="d-flex flex-column justify-content-center p-4">
-                    <div className={`${item.bgColor} rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center`} 
-                         style={{ width: '70px', height: '70px' }}>
-                      <IconComponent size={30} className={item.color} />
+        {/* Dashboard Grid */}
+        <div className="dashboard-grid">
+          <Row className="g-4">
+            {dashboardItems.map((item, index) => {
+              const IconComponent = item.icon;
+              return (
+                <Col xs={12} sm={6} lg={4} xl={3} key={index}>
+                  <div 
+                    className="dashboard-card"
+                    onClick={() => navigate(item.path)}
+                    style={{ 
+                      background: item.gradient,
+                      animationDelay: `${index * 0.1}s`
+                    }}
+                  >
+                    <div className="card-content">
+                      <div className="card-header">
+                        <div className="icon-wrapper">
+                          <IconComponent size={24} />
+                        </div>
+                        <div className="card-count">{item.count}</div>
+                      </div>
+                      <div className="card-body">
+                        <h3 className="card-title">{item.title}</h3>
+                        <p className="card-description">{item.description}</p>
+                      </div>
                     </div>
-                    <Card.Title className="fw-bold mb-2 text-dark">
-                      {item.title}
-                    </Card.Title>
-                    <Card.Text className="text-muted small">
-                      {item.description}
-                    </Card.Text>
-                  </Card.Body>
-                </Card>
+                    <div className="card-overlay"></div>
+                  </div>
+                </Col>
+              );
+            })}
+          </Row>
+        </div>
+
+        {/* Stats Section */}
+        <div className="stats-section">
+          <div className="stats-container">
+            <h2 className="stats-title">Business Overview</h2>
+            <Row className="g-4">
+              <Col xs={6} md={3}>
+                <div className="stat-card">
+                  <div className="stat-number">8</div>
+                  <div className="stat-label">Active Modules</div>
+                </div>
               </Col>
-            );
-          })}
-        </Row>
+              <Col xs={6} md={3}>
+                <div className="stat-card">
+                  <div className="stat-number">₹1.2M</div>
+                  <div className="stat-label">Monthly Revenue</div>
+                </div>
+              </Col>
+              <Col xs={6} md={3}>
+                <div className="stat-card">
+                  <div className="stat-number">99.9%</div>
+                  <div className="stat-label">Uptime</div>
+                </div>
+              </Col>
+              <Col xs={6} md={3}>
+                <div className="stat-card">
+                  <div className="stat-number">24/7</div>
+                  <div className="stat-label">Support</div>
+                </div>
+              </Col>
+            </Row>
+          </div>
+        </div>
 
-        {/* Statistics or Additional Info Section */}
-        <Row className="mt-5 justify-content-center">
-          <Col md={8}>
-            <Card className="border-0 shadow-sm" style={{ borderRadius: '15px' }}>
-              <Card.Body className="text-center py-4">
-                <h5 className="text-muted mb-3">Quick Stats</h5>
-                <Row>
-                  <Col>
-                    <div className="text-primary">
-                      <h4 className="fw-bold">5</h4>
-                      <small className="text-muted">Modules</small>
-                    </div>
-                  </Col>
-                  <Col>
-                    <div className="text-success">
-                      <h4 className="fw-bold">Active</h4>
-                      <small className="text-muted">Status</small>
-                    </div>
-                  </Col>
-                  <Col>
-                    <div className="text-info">
-                      <h4 className="fw-bold">2024</h4>
-                      <small className="text-muted">Version</small>
-                    </div>
-                  </Col>
-                </Row>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
+        {/* Recent Activity */}
+        <div className="activity-section">
+          <div className="activity-container">
+            <h2 className="activity-title">Recent Activity</h2>
+            <div className="activity-list">
+              <div className="activity-item">
+                <div className="activity-icon success">
+                  <BsCake size={16} />
+                </div>
+                <div className="activity-content">
+                  <div className="activity-text">New cake order received</div>
+                  <div className="activity-time">2 minutes ago</div>
+                </div>
+              </div>
+              <div className="activity-item">
+                <div className="activity-icon warning">
+                  <BsWallet size={16} />
+                </div>
+                <div className="activity-content">
+                  <div className="activity-text">Salary payment processed</div>
+                  <div className="activity-time">1 hour ago</div>
+                </div>
+              </div>
+              <div className="activity-item">
+                <div className="activity-icon info">
+                  <BsTruck size={16} />
+                </div>
+                <div className="activity-content">
+                  <div className="activity-text">New supplier registered</div>
+                  <div className="activity-time">3 hours ago</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </Container>
-
-      {/* Add some custom CSS for better styling */}
-      <style jsx>{`
-        .dashboard-card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-        
-        .min-vh-100 {
-          min-height: 100vh;
-        }
-        
-        .bg-primary-subtle {
-          background-color: rgba(13, 110, 253, 0.1);
-        }
-        
-        .bg-success-subtle {
-          background-color: rgba(25, 135, 84, 0.1);
-        }
-        
-        .bg-danger-subtle {
-          background-color: rgba(220, 53, 69, 0.1);
-        }
-        
-        .bg-warning-subtle {
-          background-color: rgba(255, 193, 7, 0.1);
-        }
-        
-        .bg-info-subtle {
-          background-color: rgba(13, 202, 240, 0.1);
-        }
-      `}</style>
-    </>
+    </div>
   );
 }
 

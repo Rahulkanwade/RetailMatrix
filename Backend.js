@@ -581,7 +581,440 @@ app.get("/loans/stats", authenticateToken, (req, res) => {
     res.json(stats);
   });
 });
+// Add these routes to your existing Express server (after the existing routes)
 
+// ===== SUPPLIER MANAGEMENT =====
 
+// Get all suppliers for logged-in user
+app.get("/suppliers", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  
+  const query = `
+    SELECT s.*, 
+           COUNT(sp.id) as productCount,
+           COALESCE(SUM(sp.price * sp.quantity), 0) as totalValue
+    FROM suppliers s 
+    LEFT JOIN supplier_products sp ON s.id = sp.supplierId 
+    WHERE s.userId = ? 
+    GROUP BY s.id 
+    ORDER BY s.dateAdded DESC
+  `;
+  
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching suppliers:", err);
+      return res.status(500).json({ message: "Error fetching suppliers" });
+    }
+    res.json(results);
+  });
+});
+
+// Get supplier with products
+app.get("/suppliers/:id", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const supplierId = req.params.id;
+  
+  const supplierQuery = "SELECT * FROM suppliers WHERE id = ? AND userId = ?";
+  const productsQuery = "SELECT * FROM supplier_products WHERE supplierId = ? AND userId = ?";
+  
+  db.query(supplierQuery, [supplierId, userId], (err, supplierResults) => {
+    if (err) {
+      console.error("Error fetching supplier:", err);
+      return res.status(500).json({ message: "Error fetching supplier" });
+    }
+    
+    if (supplierResults.length === 0) {
+      return res.status(404).json({ message: "Supplier not found" });
+    }
+    
+    db.query(productsQuery, [supplierId, userId], (err, productsResults) => {
+      if (err) {
+        console.error("Error fetching supplier products:", err);
+        return res.status(500).json({ message: "Error fetching supplier products" });
+      }
+      
+      const supplier = supplierResults[0];
+      supplier.products = productsResults;
+      
+      res.json(supplier);
+    });
+  });
+});
+
+// Add new supplier
+app.post("/suppliers", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { name, contact, address, billDate, products } = req.body;
+  
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: "Supplier name is required" });
+  }
+  
+  if (!contact || !contact.trim()) {
+    return res.status(400).json({ message: "Contact number is required" });
+  }
+  
+  // Validate contact format (+91XXXXXXXXXX)
+  const contactRegex = /^\+91\d{10}$/;
+  if (!contactRegex.test(contact)) {
+    return res.status(400).json({ message: "Contact number must be in format +91XXXXXXXXXX" });
+  }
+  
+  const supplierQuery = `
+    INSERT INTO suppliers (name, contact, address, billDate, userId) 
+    VALUES (?, ?, ?, ?, ?)
+  `;
+  
+  db.query(supplierQuery, [name.trim(), contact, address || "", billDate, userId], (err, result) => {
+    if (err) {
+      console.error("Error adding supplier:", err);
+      return res.status(500).json({ message: "Error adding supplier" });
+    }
+    
+    const supplierId = result.insertId;
+    
+    // Add products if provided
+    if (products && products.length > 0) {
+      const productPromises = products.map(product => {
+        return new Promise((resolve, reject) => {
+          const productQuery = `
+            INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `;
+          
+          db.query(productQuery, [
+            supplierId,
+            product.name,
+            product.quantity,
+            product.unit,
+            product.price,
+            product.category,
+            userId
+          ], (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      });
+      
+      Promise.all(productPromises)
+        .then(() => {
+          res.json({ 
+            id: supplierId, 
+            name: name.trim(), 
+            contact, 
+            address, 
+            billDate,
+            products 
+          });
+        })
+        .catch((err) => {
+          console.error("Error adding supplier products:", err);
+          res.status(500).json({ message: "Supplier added but error adding products" });
+        });
+    } else {
+      res.json({ 
+        id: supplierId, 
+        name: name.trim(), 
+        contact, 
+        address, 
+        billDate,
+        products: [] 
+      });
+    }
+  });
+});
+
+// Update supplier
+app.put("/suppliers/:id", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const supplierId = req.params.id;
+  const { name, contact, address, billDate, products } = req.body;
+  
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: "Supplier name is required" });
+  }
+  
+  if (!contact || !contact.trim()) {
+    return res.status(400).json({ message: "Contact number is required" });
+  }
+  
+  // Validate contact format
+  const contactRegex = /^\+91\d{10}$/;
+  if (!contactRegex.test(contact)) {
+    return res.status(400).json({ message: "Contact number must be in format +91XXXXXXXXXX" });
+  }
+  
+  const updateQuery = `
+    UPDATE suppliers 
+    SET name = ?, contact = ?, address = ?, billDate = ? 
+    WHERE id = ? AND userId = ?
+  `;
+  
+  db.query(updateQuery, [name.trim(), contact, address || "", billDate, supplierId, userId], (err, result) => {
+    if (err) {
+      console.error("Error updating supplier:", err);
+      return res.status(500).json({ message: "Error updating supplier" });
+    }
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Supplier not found" });
+    }
+    
+    // Delete existing products and add new ones
+    db.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId], (err) => {
+      if (err) {
+        console.error("Error deleting old products:", err);
+        return res.status(500).json({ message: "Error updating supplier products" });
+      }
+      
+      // Add new products if provided
+      if (products && products.length > 0) {
+        const productPromises = products.map(product => {
+          return new Promise((resolve, reject) => {
+            const productQuery = `
+              INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId) 
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `;
+            
+            db.query(productQuery, [
+              supplierId,
+              product.name,
+              product.quantity,
+              product.unit,
+              product.price,
+              product.category,
+              userId
+            ], (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        });
+        
+        Promise.all(productPromises)
+          .then(() => {
+            res.json({ message: "Supplier updated successfully" });
+          })
+          .catch((err) => {
+            console.error("Error adding updated products:", err);
+            res.status(500).json({ message: "Supplier updated but error adding products" });
+          });
+      } else {
+        res.json({ message: "Supplier updated successfully" });
+      }
+    });
+  });
+});
+
+// Delete supplier
+app.delete("/suppliers/:id", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const supplierId = req.params.id;
+  
+  // First delete all products for this supplier
+  db.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId], (err) => {
+    if (err) {
+      console.error("Error deleting supplier products:", err);
+      return res.status(500).json({ message: "Error deleting supplier products" });
+    }
+    
+    // Then delete the supplier
+    db.query("DELETE FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId], (err, result) => {
+      if (err) {
+        console.error("Error deleting supplier:", err);
+        return res.status(500).json({ message: "Error deleting supplier" });
+      }
+      
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Supplier not found" });
+      }
+      
+      res.json({ message: "Supplier deleted successfully" });
+    });
+  });
+});
+
+// ===== SUPPLIER PRODUCTS MANAGEMENT =====
+
+// Get all products for a supplier
+app.get("/suppliers/:id/products", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const supplierId = req.params.id;
+  
+  const query = `
+    SELECT sp.* FROM supplier_products sp
+    JOIN suppliers s ON sp.supplierId = s.id
+    WHERE sp.supplierId = ? AND sp.userId = ? AND s.userId = ?
+    ORDER BY sp.name
+  `;
+  
+  db.query(query, [supplierId, userId, userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching supplier products:", err);
+      return res.status(500).json({ message: "Error fetching supplier products" });
+    }
+    res.json(results);
+  });
+});
+
+// Add product to supplier
+app.post("/suppliers/:id/products", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const supplierId = req.params.id;
+  const { name, quantity, unit, price, category } = req.body;
+  
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: "Product name is required" });
+  }
+  
+  if (!quantity || quantity <= 0) {
+    return res.status(400).json({ message: "Valid quantity is required" });
+  }
+  
+  if (!price || price <= 0) {
+    return res.status(400).json({ message: "Valid price is required" });
+  }
+  
+  // Verify supplier belongs to user
+  db.query("SELECT id FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId], (err, supplierResults) => {
+    if (err) {
+      console.error("Error verifying supplier:", err);
+      return res.status(500).json({ message: "Error verifying supplier" });
+    }
+    
+    if (supplierResults.length === 0) {
+      return res.status(404).json({ message: "Supplier not found" });
+    }
+    
+    const query = `
+      INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId) 
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    db.query(query, [supplierId, name.trim(), quantity, unit, price, category, userId], (err, result) => {
+      if (err) {
+        console.error("Error adding supplier product:", err);
+        return res.status(500).json({ message: "Error adding supplier product" });
+      }
+      
+      res.json({
+        id: result.insertId,
+        supplierId: parseInt(supplierId),
+        name: name.trim(),
+        quantity,
+        unit,
+        price,
+        category
+      });
+    });
+  });
+});
+
+// Delete supplier product
+app.delete("/supplier-products/:id", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const productId = req.params.id;
+  
+  const query = `
+    DELETE sp FROM supplier_products sp 
+    JOIN suppliers s ON sp.supplierId = s.id 
+    WHERE sp.id = ? AND sp.userId = ? AND s.userId = ?
+  `;
+  
+  db.query(query, [productId, userId, userId], (err, result) => {
+    if (err) {
+      console.error("Error deleting supplier product:", err);
+      return res.status(500).json({ message: "Error deleting supplier product" });
+    }
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Supplier product not found" });
+    }
+    
+    res.json({ message: "Supplier product deleted successfully" });
+  });
+});
+
+// ===== INVENTORY MANAGEMENT =====
+
+// Get inventory summary
+app.get("/inventory", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  
+  const query = `
+    SELECT 
+      name,
+      SUM(quantity) as totalQuantity,
+      unit,
+      category,
+      AVG(price) as averagePrice,
+      MAX(sp.dateAdded) as lastUpdated
+    FROM supplier_products sp
+    JOIN suppliers s ON sp.supplierId = s.id
+    WHERE sp.userId = ? AND s.userId = ?
+    GROUP BY name, unit, category
+    ORDER BY name
+  `;
+  
+  db.query(query, [userId, userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching inventory:", err);
+      return res.status(500).json({ message: "Error fetching inventory" });
+    }
+    res.json(results);
+  });
+});
+
+// Get supplier statistics
+app.get("/suppliers/stats", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  
+  const query = `
+    SELECT 
+      COUNT(DISTINCT s.id) as totalSuppliers,
+      COUNT(sp.id) as totalProducts,
+      COALESCE(SUM(sp.price * sp.quantity), 0) as totalValue,
+      COALESCE(AVG(sp.price * sp.quantity), 0) as averageOrderValue
+    FROM suppliers s
+    LEFT JOIN supplier_products sp ON s.id = sp.supplierId
+    WHERE s.userId = ?
+  `;
+  
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching supplier stats:", err);
+      return res.status(500).json({ message: "Error fetching supplier statistics" });
+    }
+    
+    const stats = results[0] || {
+      totalSuppliers: 0,
+      totalProducts: 0,
+      totalValue: 0,
+      averageOrderValue: 0
+    };
+    
+    res.json(stats);
+  });
+});
+// Get all products for a single supplier
+app.get("/suppliers/:supplierId/products", authenticateToken, (req, res) => {
+    const { supplierId } = req.params;
+    const userId = req.user.id;
+
+    const query = `
+        SELECT * FROM supplier_products 
+        WHERE supplierId = ? AND userId = ?
+        ORDER BY dateAdded DESC
+    `;
+
+    db.query(query, [supplierId, userId], (err, results) => {
+        if (err) {
+            console.error("Error fetching supplier products:", err);
+            return res.status(500).json({ message: "Error fetching products" });
+        }
+        res.json(results);
+    });
+});
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Backend running on http://localhost:${PORT}`));
