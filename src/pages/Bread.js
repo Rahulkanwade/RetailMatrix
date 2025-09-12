@@ -177,7 +177,7 @@ export default function PavWholesaleManagement() {
         <div className="row">
           <div className="col-12">
             <div className="text-center py-4 text-white">
-              <h1 className="display-4 fw-bold mb-2">🥖 PAV Wholesale Manager</h1>
+              <h1 className="display-4 fw-bold mb-2">Bread Wholesale Manager</h1>
               <p className="lead mb-0">Manage your daily PAV wholesale business efficiently</p>
             </div>
           </div>

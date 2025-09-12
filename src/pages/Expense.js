@@ -5,16 +5,16 @@ import "bootstrap/dist/css/bootstrap.min.css";
 
 const ExpenseCalculator = () => {
   const [expenses, setExpenses] = useState([]);
-  const [form, setForm] = useState({ name: "Oil", quantity: "", unit: "ltr", price: "" });
+  const [form, setForm] = useState({ name: "तेल", quantity: "", unit: "लिटर", price: "" });
   const [filterPeriod, setFilterPeriod] = useState("7days");
 
-  const expenseOptions = ["Oil", "Sugar", "Rice", "Wheat", "Milk"];
+  const expenseOptions = ["तेल", "साखर", "तांदूळ", "गहू", "दूध"];
   const unitOptions = {
-    Oil: ["ltr", "ml"],
-    Sugar: ["kg", "g"],
-    Rice: ["kg", "g"],
-    Wheat: ["kg", "g"],
-    Milk: ["ltr", "ml"],
+    "तेल": ["लिटर", "मिली"],
+    "साखर": ["किलो", "ग्रॅम"],
+    "तांदूळ": ["किलो", "ग्रॅम"],
+    "गहू": ["किलो", "ग्रॅम"],
+    "दूध": ["लिटर", "मिली"],
   };
 
   useEffect(() => {
@@ -58,7 +58,7 @@ const ExpenseCalculator = () => {
       console.error("Error adding expense:", err);
     }
 
-    setForm({ name: "Oil", quantity: "", unit: "ltr", price: "" });
+    setForm({ name: "तेल", quantity: "", unit: "लिटर", price: "" });
   };
 
   const getFilteredExpenses = () => {
@@ -132,20 +132,20 @@ const ExpenseCalculator = () => {
     <Container fluid className="p-4 bg-light">
       <Card className="shadow-lg border-0 mb-4">
         <Card.Header className="bg-dark text-white">
-          <h2 className="text-center mb-0 py-2">Expense Manager</h2>
+          <h2 className="text-center mb-0 py-2">खर्च व्यवस्थापक</h2>
         </Card.Header>
         <Card.Body className="p-4">
           {/* Add Expense Form */}
           <Card className="border-0 shadow-sm mb-4">
             <Card.Header className="bg-secondary text-white">
-              <h5 className="mb-0">Add New Expense</h5>
+              <h5 className="mb-0">नवीन खर्च जोडा</h5>
             </Card.Header>
             <Card.Body>
               <Form onSubmit={handleSubmit}>
                 <Row className="g-3">
                   <Col xs={12} md={6} lg={3}>
                     <Form.Group>
-                      <Form.Label>Item</Form.Label>
+                      <Form.Label>वस्तू</Form.Label>
                       <Form.Select 
                         name="name" 
                         value={form.name} 
@@ -162,12 +162,12 @@ const ExpenseCalculator = () => {
 
                   <Col xs={12} md={6} lg={3}>
                     <Form.Group>
-                      <Form.Label>Quantity</Form.Label>
+                      <Form.Label>प्रमाण</Form.Label>
                       <Form.Control 
                         type="number" 
                         step="0.01" 
                         name="quantity" 
-                        placeholder="Quantity" 
+                        placeholder="प्रमाण प्रविष्ट करा" 
                         value={form.quantity} 
                         onChange={handleChange} 
                         className="form-control-lg"
@@ -178,7 +178,7 @@ const ExpenseCalculator = () => {
 
                   <Col xs={12} md={6} lg={3}>
                     <Form.Group>
-                      <Form.Label>Unit</Form.Label>
+                      <Form.Label>युनिट</Form.Label>
                       <Form.Select 
                         name="unit" 
                         value={form.unit} 
@@ -195,12 +195,12 @@ const ExpenseCalculator = () => {
 
                   <Col xs={12} md={6} lg={3}>
                     <Form.Group>
-                      <Form.Label>Price (₹)</Form.Label>
+                      <Form.Label>किंमत (₹)</Form.Label>
                       <Form.Control 
                         type="number" 
                         step="0.01" 
                         name="price" 
-                        placeholder="Price" 
+                        placeholder="किंमत प्रविष्ट करा" 
                         value={form.price} 
                         onChange={handleChange} 
                         className="form-control-lg"
@@ -218,7 +218,7 @@ const ExpenseCalculator = () => {
                     size="lg"
                   >
                     <i className="bi bi-plus-circle me-2"></i>
-                    Add Expense
+                    खर्च जोडा
                   </Button>
                 </div>
               </Form>
@@ -230,7 +230,7 @@ const ExpenseCalculator = () => {
             <Col xs={12} md={4}>
               <Card className="text-center border-0 shadow-sm h-100">
                 <Card.Header className="bg-success text-white">
-                  <h5 className="mb-0">Today's Expenses</h5>
+                  <h5 className="mb-0">आजचा खर्च</h5>
                 </Card.Header>
                 <Card.Body className="d-flex flex-column justify-content-center">
                   <h2 className="mb-0">₹{calculateDailyExpense()}</h2>
@@ -241,7 +241,7 @@ const ExpenseCalculator = () => {
             <Col xs={12} md={4}>
               <Card className="text-center border-0 shadow-sm h-100">
                 <Card.Header className="bg-primary text-white">
-                  <h5 className="mb-0">Monthly Expenses</h5>
+                  <h5 className="mb-0">मासिक खर्च</h5>
                 </Card.Header>
                 <Card.Body className="d-flex flex-column justify-content-center">
                   <h2 className="mb-0">₹{calculateMonthlyExpense()}</h2>
@@ -252,7 +252,7 @@ const ExpenseCalculator = () => {
             <Col xs={12} md={4}>
               <Card className="text-center border-0 shadow-sm h-100">
                 <Card.Header className="bg-info text-white">
-                  <h5 className="mb-0">Selected Period</h5>
+                  <h5 className="mb-0">निवडलेला कालावधी</h5>
                 </Card.Header>
                 <Card.Body className="d-flex flex-column justify-content-center">
                   <h2 className="mb-0">₹{calculateTotal(filteredExpenses)}</h2>
@@ -264,7 +264,7 @@ const ExpenseCalculator = () => {
           {/* Category Summary */}
           <Card className="border-0 shadow-sm mb-4">
             <Card.Header className="bg-secondary text-white d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Category Breakdown</h5>
+              <h5 className="mb-0">श्रेणीनुसार तपशील</h5>
             </Card.Header>
             <Card.Body>
               <Row className="g-3">
@@ -285,17 +285,17 @@ const ExpenseCalculator = () => {
           {/* Expense List */}
           <Card className="border-0 shadow-sm">
             <Card.Header className="bg-secondary text-white d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Expense History</h5>
+              <h5 className="mb-0">खर्चाचा इतिहास</h5>
               <Form.Select 
                 style={{ width: 'auto' }}
                 value={filterPeriod}
                 onChange={(e) => setFilterPeriod(e.target.value)}
                 className="ms-auto"
               >
-                <option value="today">Today</option>
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-                <option value="90days">Last 90 Days</option>
+                <option value="today">आजचा</option>
+                <option value="7days">मागील ७ दिवस</option>
+                <option value="30days">मागील ३० दिवस</option>
+                <option value="90days">मागील ९० दिवस</option>
               </Form.Select>
             </Card.Header>
             <Card.Body className="p-0">
@@ -303,11 +303,11 @@ const ExpenseCalculator = () => {
                 <Table hover className="mb-0">
                   <thead className="bg-light">
                     <tr>
-                      <th className="px-3">Item</th>
-                      <th className="text-center">Quantity</th>
-                      <th className="text-center">Unit</th>
-                      <th className="text-center">Price (₹)</th>
-                      <th className="text-center">Date</th>
+                      <th className="px-3">वस्तू</th>
+                      <th className="text-center">प्रमाण</th>
+                      <th className="text-center">युनिट</th>
+                      <th className="text-center">किंमत (₹)</th>
+                      <th className="text-center">तारीख</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -334,18 +334,18 @@ const ExpenseCalculator = () => {
                           <td className="text-center">{expense.quantity}</td>
                           <td className="text-center">{expense.unit}</td>
                           <td className="text-center fw-bold">₹{parseFloat(expense.price).toFixed(2)}</td>
-                          <td className="text-center">{new Date(expense.date).toLocaleDateString()}</td>
+                          <td className="text-center">{new Date(expense.date).toLocaleDateString("mr-IN")}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="5" className="text-center py-3">No expenses found for this period</td>
+                        <td colSpan="5" className="text-center py-3">या कालावधीसाठी कोणताही खर्च आढळला नाही</td>
                       </tr>
                     )}
                   </tbody>
                   <tfoot className="bg-light">
                     <tr>
-                      <td colSpan="3" className="text-end fw-bold">Total:</td>
+                      <td colSpan="3" className="text-end fw-bold">एकूण:</td>
                       <td className="text-center fw-bold">₹{calculateTotal(filteredExpenses)}</td>
                       <td></td>
                     </tr>

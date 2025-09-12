@@ -66,11 +66,11 @@ function Dashboard() {
       count: "8"
     },
     {
-      title: "Pav Management",
-      description: "Track pav production and sales",
+      title: "Bread Management",
+      description: "Track Bread production and sales",
       icon: BsCashCoin,
       gradient: "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
-      path: "/Pav",
+      path: "/Bread",
       count: "156"
     },
     {
