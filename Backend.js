@@ -8,8 +8,9 @@ const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
 const app = express();
+const allowedOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: allowedOrigin,
   credentials: true
 }));
 app.use(cookieParser());
@@ -18,10 +19,23 @@ app.use(cookieParser());
 app.use(express.json());
 
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",
-  database: "auth_db"
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT,
+  ssl: {
+    rejectUnauthorized: false   // 👈 important for Railway
+  }
+});
+
+
+db.connect((err) => {
+  if (err) {
+    console.error("Database connection failed:", err);
+  } else {
+    console.log("✅ Connected to Railway MySQL");
+  }
 });
 
 
@@ -1016,5 +1030,5 @@ app.get("/suppliers/:supplierId/products", authenticateToken, (req, res) => {
         res.json(results);
     });
 });
-const PORT = 5000;
-app.listen(PORT, () => console.log(`Backend running on http://localhost:${PORT}`));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));

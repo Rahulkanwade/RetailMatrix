@@ -324,7 +324,7 @@ const CakeManagement = () => {
             <div className="d-flex justify-content-between align-items-center mb-5">
                 <h2 className="text-primary fw-bold display-5">
                     <BsCake className="me-3" />
-                    Sweet Delights Management
+                  Retail Matrix
                 </h2>
                 <Button variant="primary" onClick={handleShow} className="d-flex align-items-center" size="lg">
                     <BsFillCartPlusFill className="me-2" /> Add New Order

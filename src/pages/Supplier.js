@@ -110,10 +110,7 @@ export default function EnhancedSupplierManagement() {
         }
     };
 
-    // Load suppliers on component mount
-    useEffect(() => {
-        loadSuppliers();
-    }, []);
+
     useEffect(() => {
         let isMounted = true;
 
@@ -354,11 +351,7 @@ export default function EnhancedSupplierManagement() {
 
             console.log('Editing supplier with products:', products); // Debug log
 
-            // Format the date properly for the input field
-            const formattedDate = supplierWithProducts.billDate
-                ? new Date(supplierWithProducts.billDate).toISOString().split('T')[0]
-                : new Date().toISOString().split('T')[0];
-
+          const formattedDate = formatDateForInput(supplierWithProducts.billDate);
             // Set the form data with all supplier information
             setNewSupplier({
                 name: supplierWithProducts.name || "",
