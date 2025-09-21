@@ -70,7 +70,7 @@ app.post("/login", (req, res) => {
     const user = results[0];
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
-    const token = jwt.sign({ id: user.id , email: user.email}, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "1h" });
     res.cookie("token", token, {
       httpOnly: true,
       secure: false,     // true if using HTTPS
@@ -96,7 +96,7 @@ app.get("/profile", (req, res) => {
   if (!token) return res.status(401).json({ message: "No token" });
 
   try {
-   const user = jwt.verify(token, process.env.JWT_SECRET);
+    const user = jwt.verify(token, process.env.JWT_SECRET);
     res.json({ email: user.email });
   } catch (err) {
     res.status(403).json({ message: "Invalid token" });
@@ -327,18 +327,18 @@ app.post("/payments/customer", authenticateToken, (req, res) => {
     INSERT INTO payments (customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType, userId)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
-  
+
   db.query(query, [customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType, userId], (err, result) => {
     if (err) return res.status(500).json({ error: "Failed to add customer payment" });
-    res.json({ 
-      id: result.insertId, 
-      customerId, 
-      customerName, 
-      amount, 
-      paymentMethod, 
-      paymentDate, 
-      notes, 
-      paymentType 
+    res.json({
+      id: result.insertId,
+      customerId,
+      customerName,
+      amount,
+      paymentMethod,
+      paymentDate,
+      notes,
+      paymentType
     });
   });
 });
@@ -392,7 +392,7 @@ app.delete("/payments/:id", authenticateToken, (req, res) => {
 
 app.get("/loans", authenticateToken, (req, res) => {
   const userId = req.user.id;
-  
+
   const query = `
     SELECT l.*, 
            COALESCE(SUM(r.amount), 0) as totalRepaid,
@@ -403,7 +403,7 @@ app.get("/loans", authenticateToken, (req, res) => {
     GROUP BY l.id 
     ORDER BY pendingAmount DESC, l.dateAdded DESC
   `;
-  
+
   db.query(query, [userId], (err, results) => {
     if (err) {
       console.error("Error fetching loans:", err);
@@ -417,26 +417,26 @@ app.get("/loans", authenticateToken, (req, res) => {
 app.post("/loans", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const { borrower, loanAmount } = req.body;
-  
+
   if (!borrower || !borrower.trim()) {
     return res.status(400).json({ message: "Borrower name is required" });
   }
-  
+
   if (!loanAmount || parseFloat(loanAmount) <= 0) {
     return res.status(400).json({ message: "Valid loan amount is required" });
   }
 
   const query = "INSERT INTO loans (borrower, loanAmount, userId) VALUES (?, ?, ?)";
-  
+
   db.query(query, [borrower.trim(), parseFloat(loanAmount), userId], (err, result) => {
     if (err) {
       console.error("Error adding loan:", err);
       return res.status(500).json({ message: "Error adding loan" });
     }
-    
-    res.json({ 
-      id: result.insertId, 
-      borrower: borrower.trim(), 
+
+    res.json({
+      id: result.insertId,
+      borrower: borrower.trim(),
       loanAmount: parseFloat(loanAmount),
       dateAdded: new Date().toISOString(),
       totalRepaid: 0,
@@ -449,25 +449,25 @@ app.post("/loans", authenticateToken, (req, res) => {
 app.delete("/loans/:id", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const loanId = req.params.id;
-  
+
   // First delete all repayments for this loan
   db.query("DELETE FROM repayments WHERE loanId = ? AND userId = ?", [loanId, userId], (err) => {
     if (err) {
       console.error("Error deleting repayments:", err);
       return res.status(500).json({ message: "Error deleting loan repayments" });
     }
-    
+
     // Then delete the loan
     db.query("DELETE FROM loans WHERE id = ? AND userId = ?", [loanId, userId], (err, result) => {
       if (err) {
         console.error("Error deleting loan:", err);
         return res.status(500).json({ message: "Error deleting loan" });
       }
-      
+
       if (result.affectedRows === 0) {
         return res.status(404).json({ message: "Loan not found" });
       }
-      
+
       res.json({ message: "Loan deleted successfully" });
     });
   });
@@ -477,14 +477,14 @@ app.delete("/loans/:id", authenticateToken, (req, res) => {
 app.get("/loans/:id/repayments", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const loanId = req.params.id;
-  
+
   const query = `
     SELECT r.* FROM repayments r 
     JOIN loans l ON r.loanId = l.id 
     WHERE r.loanId = ? AND r.userId = ? AND l.userId = ?
     ORDER BY r.date DESC
   `;
-  
+
   db.query(query, [loanId, userId, userId], (err, results) => {
     if (err) {
       console.error("Error fetching repayments:", err);
@@ -499,33 +499,33 @@ app.post("/loans/:id/repayments", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const loanId = req.params.id;
   const { amount } = req.body;
-  
+
   if (!amount || parseFloat(amount) <= 0) {
     return res.status(400).json({ message: "Valid repayment amount is required" });
   }
-  
+
   // First verify the loan belongs to the user
   db.query("SELECT * FROM loans WHERE id = ? AND userId = ?", [loanId, userId], (err, loanResults) => {
     if (err) {
       console.error("Error verifying loan:", err);
       return res.status(500).json({ message: "Error verifying loan" });
     }
-    
+
     if (loanResults.length === 0) {
       return res.status(404).json({ message: "Loan not found" });
     }
-    
+
     // Add the repayment
     const query = "INSERT INTO repayments (loanId, amount, userId) VALUES (?, ?, ?)";
-    
+
     db.query(query, [loanId, parseFloat(amount), userId], (err, result) => {
       if (err) {
         console.error("Error adding repayment:", err);
         return res.status(500).json({ message: "Error adding repayment" });
       }
-      
-      res.json({ 
-        id: result.insertId, 
+
+      res.json({
+        id: result.insertId,
         loanId: parseInt(loanId),
         amount: parseFloat(amount),
         date: new Date().toISOString()
@@ -538,23 +538,23 @@ app.post("/loans/:id/repayments", authenticateToken, (req, res) => {
 app.delete("/repayments/:id", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const repaymentId = req.params.id;
-  
+
   const query = `
     DELETE r FROM repayments r 
     JOIN loans l ON r.loanId = l.id 
     WHERE r.id = ? AND r.userId = ? AND l.userId = ?
   `;
-  
+
   db.query(query, [repaymentId, userId, userId], (err, result) => {
     if (err) {
       console.error("Error deleting repayment:", err);
       return res.status(500).json({ message: "Error deleting repayment" });
     }
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Repayment not found" });
     }
-    
+
     res.json({ message: "Repayment deleted successfully" });
   });
 });
@@ -562,7 +562,7 @@ app.delete("/repayments/:id", authenticateToken, (req, res) => {
 // ===== GET Loan Statistics =====
 app.get("/loans/stats", authenticateToken, (req, res) => {
   const userId = req.user.id;
-  
+
   const query = `
     SELECT 
       COALESCE(SUM(l.loanAmount), 0) as totalLoaned,
@@ -578,20 +578,20 @@ app.get("/loans/stats", authenticateToken, (req, res) => {
     ) r ON l.id = r.loanId
     WHERE l.userId = ?
   `;
-  
+
   db.query(query, [userId, userId], (err, results) => {
     if (err) {
       console.error("Error fetching loan stats:", err);
       return res.status(500).json({ message: "Error fetching loan statistics" });
     }
-    
+
     const stats = results[0] || {
       totalLoaned: 0,
       totalRepaid: 0,
       totalPending: 0,
       totalLoans: 0
     };
-    
+
     res.json(stats);
   });
 });
@@ -602,7 +602,7 @@ app.get("/loans/stats", authenticateToken, (req, res) => {
 // Get all suppliers for logged-in user
 app.get("/suppliers", authenticateToken, (req, res) => {
   const userId = req.user.id;
-  
+
   const query = `
     SELECT s.*, 
            COUNT(sp.id) as productCount,
@@ -613,7 +613,7 @@ app.get("/suppliers", authenticateToken, (req, res) => {
     GROUP BY s.id 
     ORDER BY s.dateAdded DESC
   `;
-  
+
   db.query(query, [userId], (err, results) => {
     if (err) {
       console.error("Error fetching suppliers:", err);
@@ -627,29 +627,29 @@ app.get("/suppliers", authenticateToken, (req, res) => {
 app.get("/suppliers/:id", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const supplierId = req.params.id;
-  
+
   const supplierQuery = "SELECT * FROM suppliers WHERE id = ? AND userId = ?";
   const productsQuery = "SELECT * FROM supplier_products WHERE supplierId = ? AND userId = ?";
-  
+
   db.query(supplierQuery, [supplierId, userId], (err, supplierResults) => {
     if (err) {
       console.error("Error fetching supplier:", err);
       return res.status(500).json({ message: "Error fetching supplier" });
     }
-    
+
     if (supplierResults.length === 0) {
       return res.status(404).json({ message: "Supplier not found" });
     }
-    
+
     db.query(productsQuery, [supplierId, userId], (err, productsResults) => {
       if (err) {
         console.error("Error fetching supplier products:", err);
         return res.status(500).json({ message: "Error fetching supplier products" });
       }
-      
+
       const supplier = supplierResults[0];
       supplier.products = productsResults;
-      
+
       res.json(supplier);
     });
   });
@@ -659,34 +659,34 @@ app.get("/suppliers/:id", authenticateToken, (req, res) => {
 app.post("/suppliers", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const { name, contact, address, billDate, products } = req.body;
-  
+
   if (!name || !name.trim()) {
     return res.status(400).json({ message: "Supplier name is required" });
   }
-  
+
   if (!contact || !contact.trim()) {
     return res.status(400).json({ message: "Contact number is required" });
   }
-  
+
   // Validate contact format (+91XXXXXXXXXX)
   const contactRegex = /^\+91\d{10}$/;
   if (!contactRegex.test(contact)) {
     return res.status(400).json({ message: "Contact number must be in format +91XXXXXXXXXX" });
   }
-  
+
   const supplierQuery = `
     INSERT INTO suppliers (name, contact, address, billDate, userId) 
     VALUES (?, ?, ?, ?, ?)
   `;
-  
+
   db.query(supplierQuery, [name.trim(), contact, address || "", billDate, userId], (err, result) => {
     if (err) {
       console.error("Error adding supplier:", err);
       return res.status(500).json({ message: "Error adding supplier" });
     }
-    
+
     const supplierId = result.insertId;
-    
+
     // Add products if provided
     if (products && products.length > 0) {
       const productPromises = products.map(product => {
@@ -695,7 +695,7 @@ app.post("/suppliers", authenticateToken, (req, res) => {
             INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `;
-          
+
           db.query(productQuery, [
             supplierId,
             product.name,
@@ -710,16 +710,16 @@ app.post("/suppliers", authenticateToken, (req, res) => {
           });
         });
       });
-      
+
       Promise.all(productPromises)
         .then(() => {
-          res.json({ 
-            id: supplierId, 
-            name: name.trim(), 
-            contact, 
-            address, 
+          res.json({
+            id: supplierId,
+            name: name.trim(),
+            contact,
+            address,
             billDate,
-            products 
+            products
           });
         })
         .catch((err) => {
@@ -727,13 +727,13 @@ app.post("/suppliers", authenticateToken, (req, res) => {
           res.status(500).json({ message: "Supplier added but error adding products" });
         });
     } else {
-      res.json({ 
-        id: supplierId, 
-        name: name.trim(), 
-        contact, 
-        address, 
+      res.json({
+        id: supplierId,
+        name: name.trim(),
+        contact,
+        address,
         billDate,
-        products: [] 
+        products: []
       });
     }
   });
@@ -744,44 +744,44 @@ app.put("/suppliers/:id", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const supplierId = req.params.id;
   const { name, contact, address, billDate, products } = req.body;
-  
+
   if (!name || !name.trim()) {
     return res.status(400).json({ message: "Supplier name is required" });
   }
-  
+
   if (!contact || !contact.trim()) {
     return res.status(400).json({ message: "Contact number is required" });
   }
-  
+
   // Validate contact format
   const contactRegex = /^\+91\d{10}$/;
   if (!contactRegex.test(contact)) {
     return res.status(400).json({ message: "Contact number must be in format +91XXXXXXXXXX" });
   }
-  
+
   const updateQuery = `
     UPDATE suppliers 
     SET name = ?, contact = ?, address = ?, billDate = ? 
     WHERE id = ? AND userId = ?
   `;
-  
+
   db.query(updateQuery, [name.trim(), contact, address || "", billDate, supplierId, userId], (err, result) => {
     if (err) {
       console.error("Error updating supplier:", err);
       return res.status(500).json({ message: "Error updating supplier" });
     }
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Supplier not found" });
     }
-    
+
     // Delete existing products and add new ones
     db.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId], (err) => {
       if (err) {
         console.error("Error deleting old products:", err);
         return res.status(500).json({ message: "Error updating supplier products" });
       }
-      
+
       // Add new products if provided
       if (products && products.length > 0) {
         const productPromises = products.map(product => {
@@ -790,7 +790,7 @@ app.put("/suppliers/:id", authenticateToken, (req, res) => {
               INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId) 
               VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
-            
+
             db.query(productQuery, [
               supplierId,
               product.name,
@@ -805,7 +805,7 @@ app.put("/suppliers/:id", authenticateToken, (req, res) => {
             });
           });
         });
-        
+
         Promise.all(productPromises)
           .then(() => {
             res.json({ message: "Supplier updated successfully" });
@@ -825,25 +825,25 @@ app.put("/suppliers/:id", authenticateToken, (req, res) => {
 app.delete("/suppliers/:id", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const supplierId = req.params.id;
-  
+
   // First delete all products for this supplier
   db.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId], (err) => {
     if (err) {
       console.error("Error deleting supplier products:", err);
       return res.status(500).json({ message: "Error deleting supplier products" });
     }
-    
+
     // Then delete the supplier
     db.query("DELETE FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId], (err, result) => {
       if (err) {
         console.error("Error deleting supplier:", err);
         return res.status(500).json({ message: "Error deleting supplier" });
       }
-      
+
       if (result.affectedRows === 0) {
         return res.status(404).json({ message: "Supplier not found" });
       }
-      
+
       res.json({ message: "Supplier deleted successfully" });
     });
   });
@@ -855,14 +855,14 @@ app.delete("/suppliers/:id", authenticateToken, (req, res) => {
 app.get("/suppliers/:id/products", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const supplierId = req.params.id;
-  
+
   const query = `
     SELECT sp.* FROM supplier_products sp
     JOIN suppliers s ON sp.supplierId = s.id
     WHERE sp.supplierId = ? AND sp.userId = ? AND s.userId = ?
     ORDER BY sp.name
   `;
-  
+
   db.query(query, [supplierId, userId, userId], (err, results) => {
     if (err) {
       console.error("Error fetching supplier products:", err);
@@ -877,41 +877,41 @@ app.post("/suppliers/:id/products", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const supplierId = req.params.id;
   const { name, quantity, unit, price, category } = req.body;
-  
+
   if (!name || !name.trim()) {
     return res.status(400).json({ message: "Product name is required" });
   }
-  
+
   if (!quantity || quantity <= 0) {
     return res.status(400).json({ message: "Valid quantity is required" });
   }
-  
+
   if (!price || price <= 0) {
     return res.status(400).json({ message: "Valid price is required" });
   }
-  
+
   // Verify supplier belongs to user
   db.query("SELECT id FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId], (err, supplierResults) => {
     if (err) {
       console.error("Error verifying supplier:", err);
       return res.status(500).json({ message: "Error verifying supplier" });
     }
-    
+
     if (supplierResults.length === 0) {
       return res.status(404).json({ message: "Supplier not found" });
     }
-    
+
     const query = `
       INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId) 
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
-    
+
     db.query(query, [supplierId, name.trim(), quantity, unit, price, category, userId], (err, result) => {
       if (err) {
         console.error("Error adding supplier product:", err);
         return res.status(500).json({ message: "Error adding supplier product" });
       }
-      
+
       res.json({
         id: result.insertId,
         supplierId: parseInt(supplierId),
@@ -929,23 +929,23 @@ app.post("/suppliers/:id/products", authenticateToken, (req, res) => {
 app.delete("/supplier-products/:id", authenticateToken, (req, res) => {
   const userId = req.user.id;
   const productId = req.params.id;
-  
+
   const query = `
     DELETE sp FROM supplier_products sp 
     JOIN suppliers s ON sp.supplierId = s.id 
     WHERE sp.id = ? AND sp.userId = ? AND s.userId = ?
   `;
-  
+
   db.query(query, [productId, userId, userId], (err, result) => {
     if (err) {
       console.error("Error deleting supplier product:", err);
       return res.status(500).json({ message: "Error deleting supplier product" });
     }
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Supplier product not found" });
     }
-    
+
     res.json({ message: "Supplier product deleted successfully" });
   });
 });
@@ -955,7 +955,7 @@ app.delete("/supplier-products/:id", authenticateToken, (req, res) => {
 // Get inventory summary
 app.get("/inventory", authenticateToken, (req, res) => {
   const userId = req.user.id;
-  
+
   const query = `
     SELECT 
       name,
@@ -970,7 +970,7 @@ app.get("/inventory", authenticateToken, (req, res) => {
     GROUP BY name, unit, category
     ORDER BY name
   `;
-  
+
   db.query(query, [userId, userId], (err, results) => {
     if (err) {
       console.error("Error fetching inventory:", err);
@@ -983,7 +983,7 @@ app.get("/inventory", authenticateToken, (req, res) => {
 // Get supplier statistics
 app.get("/suppliers/stats", authenticateToken, (req, res) => {
   const userId = req.user.id;
-  
+
   const query = `
     SELECT 
       COUNT(DISTINCT s.id) as totalSuppliers,
@@ -994,41 +994,356 @@ app.get("/suppliers/stats", authenticateToken, (req, res) => {
     LEFT JOIN supplier_products sp ON s.id = sp.supplierId
     WHERE s.userId = ?
   `;
-  
+
   db.query(query, [userId], (err, results) => {
     if (err) {
       console.error("Error fetching supplier stats:", err);
       return res.status(500).json({ message: "Error fetching supplier statistics" });
     }
-    
+
     const stats = results[0] || {
       totalSuppliers: 0,
       totalProducts: 0,
       totalValue: 0,
       averageOrderValue: 0
     };
-    
+
     res.json(stats);
   });
 });
 // Get all products for a single supplier
 app.get("/suppliers/:supplierId/products", authenticateToken, (req, res) => {
-    const { supplierId } = req.params;
-    const userId = req.user.id;
+  const { supplierId } = req.params;
+  const userId = req.user.id;
 
-    const query = `
+  const query = `
         SELECT * FROM supplier_products 
         WHERE supplierId = ? AND userId = ?
         ORDER BY dateAdded DESC
     `;
 
-    db.query(query, [supplierId, userId], (err, results) => {
-        if (err) {
-            console.error("Error fetching supplier products:", err);
-            return res.status(500).json({ message: "Error fetching products" });
-        }
-        res.json(results);
-    });
+  db.query(query, [supplierId, userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching supplier products:", err);
+      return res.status(500).json({ message: "Error fetching products" });
+    }
+    res.json(results);
+  });
 });
+
+
+
+
+
+// Add these routes to your existing backend.js file
+
+// ===== BREAD SALES MANAGEMENT =====
+
+
+app.get("/bread/price", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  db.query("SELECT price FROM bread_prices WHERE userId = ? ORDER BY dateUpdated DESC LIMIT 1", [userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching bread price:", err);
+      return res.status(500).json({ message: "Error fetching bread price" });
+    }
+
+    // Default price if none set
+    const price = results.length > 0 ? results[0].price : 45;
+    res.json({ price });
+  });
+});
+
+// Update bread price
+app.put("/bread/price", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { price } = req.body;
+
+  if (!price || price <= 0) {
+    return res.status(400).json({ message: "Valid price is required" });
+  }
+
+  const query = "INSERT INTO bread_prices (userId, price) VALUES (?, ?)";
+
+  db.query(query, [userId, parseFloat(price)], (err, result) => {
+    if (err) {
+      console.error("Error updating bread price:", err);
+      return res.status(500).json({ message: "Error updating bread price" });
+    }
+
+    res.json({ price: parseFloat(price), message: "Price updated successfully" });
+  });
+});
+
+// Get all bread customers for logged-in user
+// Remove the simpler version and keep only:
+app.get("/bread/customers", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  const query = `
+    SELECT 
+  bc.id,
+  bc.name,
+  COALESCE(sales_total.totalBills, 0) as totalBills,
+  COALESCE(payments_total.totalPaid, 0) as totalPaid,
+  COALESCE(sales_total.totalBills, 0) - COALESCE(payments_total.totalPaid, 0) as balance
+FROM bread_customers bc
+LEFT JOIN (
+  SELECT customerId, SUM(billAmount) as totalBills 
+  FROM bread_sales 
+  WHERE userId = ? 
+  GROUP BY customerId
+) sales_total ON bc.id = sales_total.customerId
+LEFT JOIN (
+  SELECT customerId, SUM(amount) as totalPaid 
+  FROM bread_payments 
+  WHERE userId = ? 
+  GROUP BY customerId
+) payments_total ON bc.id = payments_total.customerId
+WHERE bc.userId = ?
+  `;
+
+  db.query(query, [userId, userId, userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching bread customers:", err);
+      return res.status(500).json({ message: "Error fetching customers" });
+    }
+
+    res.json(results); // Remove the formatting that converts numbers back to strings
+  });
+});
+
+// Get detailed customer data with sales and payments
+app.get("/bread/customers/:id/details", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const customerId = req.params.id;
+
+  const customerQuery = "SELECT * FROM bread_customers WHERE id = ? AND userId = ?";
+  const salesQuery = `
+    SELECT * FROM bread_sales 
+    WHERE customerId = ? AND userId = ? 
+    ORDER BY saleDate DESC, saleTime DESC
+  `;
+  const paymentsQuery = `
+    SELECT * FROM bread_payments 
+    WHERE customerId = ? AND userId = ? 
+    ORDER BY paymentDate DESC, paymentTime DESC
+  `;
+
+  db.query(customerQuery, [customerId, userId], (err, customerResults) => {
+    if (err || customerResults.length === 0) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    const customer = customerResults[0];
+
+    db.query(salesQuery, [customerId, userId], (err, salesResults) => {
+      if (err) {
+        console.error("Error fetching customer sales:", err);
+        return res.status(500).json({ message: "Error fetching customer sales" });
+      }
+
+      db.query(paymentsQuery, [customerId, userId], (err, paymentsResults) => {
+        if (err) {
+          console.error("Error fetching customer payments:", err);
+          return res.status(500).json({ message: "Error fetching customer payments" });
+        }
+
+        customer.sales = salesResults;
+        customer.payments = paymentsResults;
+
+        res.json(customer);
+      });
+    });
+  });
+});
+
+// Add new bread sale
+app.post("/bread/sales", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { customerName, quantity, pricePerDozen } = req.body;
+
+  if (!customerName || !customerName.trim()) {
+    return res.status(400).json({ message: "Customer name is required" });
+  }
+
+  if (!quantity || quantity <= 0) {
+    return res.status(400).json({ message: "Valid quantity is required" });
+  }
+
+  if (!pricePerDozen || pricePerDozen <= 0) {
+    return res.status(400).json({ message: "Valid price is required" });
+  }
+
+  const billAmount = parseFloat(quantity) * parseFloat(pricePerDozen);
+
+  // First, ensure customer exists
+  const checkCustomerQuery = "SELECT id FROM bread_customers WHERE name = ? AND userId = ?";
+
+  db.query(checkCustomerQuery, [customerName.trim(), userId], (err, customerResults) => {
+    if (err) {
+      console.error("Error checking customer:", err);
+      return res.status(500).json({ message: "Error processing sale" });
+    }
+
+    const processSale = (customerId) => {
+      const saleQuery = `
+        INSERT INTO bread_sales (customerId, customerName, quantity, pricePerDozen, billAmount, userId)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+
+      db.query(saleQuery, [customerId, customerName.trim(), quantity, pricePerDozen, billAmount, userId], (err, result) => {
+        if (err) {
+          console.error("Error adding bread sale:", err);
+          return res.status(500).json({ message: "Error adding sale" });
+        }
+
+        res.json({
+          id: result.insertId,
+          customerId,
+          customerName: customerName.trim(),
+          quantity: parseFloat(quantity),
+          pricePerDozen: parseFloat(pricePerDozen),
+          billAmount,
+          saleDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+          saleTime: new Date().toTimeString().split(' ')[0]  // HH:MM:SS
+        });
+      });
+    };
+
+    if (customerResults.length > 0) {
+      // Customer exists
+      processSale(customerResults[0].id);
+    } else {
+      // Create new customer
+      const createCustomerQuery = "INSERT INTO bread_customers (name, userId) VALUES (?, ?)";
+
+      db.query(createCustomerQuery, [customerName.trim(), userId], (err, result) => {
+        if (err) {
+          console.error("Error creating customer:", err);
+          return res.status(500).json({ message: "Error creating customer" });
+        }
+
+        processSale(result.insertId);
+      });
+    }
+  });
+});
+
+// Record bread payment
+app.post("/bread/payments", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { customerName, amount } = req.body;
+
+  if (!customerName || !customerName.trim()) {
+    return res.status(400).json({ message: "Customer name is required" });
+  }
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ message: "Valid payment amount is required" });
+  }
+
+  // Find customer
+  const findCustomerQuery = "SELECT id FROM bread_customers WHERE name = ? AND userId = ?";
+
+  db.query(findCustomerQuery, [customerName.trim(), userId], (err, customerResults) => {
+    if (err) {
+      console.error("Error finding customer:", err);
+      return res.status(500).json({ message: "Error processing payment" });
+    }
+
+    if (customerResults.length === 0) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    const customerId = customerResults[0].id;
+
+    // Check current balance
+    const balanceQuery = `
+      SELECT 
+        COALESCE(SUM(bs.billAmount), 0) - COALESCE(SUM(bp.amount), 0) as balance
+      FROM bread_customers bc
+      LEFT JOIN bread_sales bs ON bc.id = bs.customerId
+      LEFT JOIN bread_payments bp ON bc.id = bp.customerId
+      WHERE bc.id = ? AND bc.userId = ?
+    `;
+
+    db.query(balanceQuery, [customerId, userId], (err, balanceResults) => {
+      if (err) {
+        console.error("Error checking balance:", err);
+        return res.status(500).json({ message: "Error checking balance" });
+      }
+
+      const currentBalance = balanceResults[0]?.balance || 0;
+
+      if (parseFloat(amount) > currentBalance) {
+        return res.status(400).json({ message: "Payment amount cannot exceed outstanding balance" });
+      }
+
+      // Record payment
+      const paymentQuery = `
+        INSERT INTO bread_payments (customerId, customerName, amount, userId)
+        VALUES (?, ?, ?, ?)
+      `;
+
+      db.query(paymentQuery, [customerId, customerName.trim(), parseFloat(amount), userId], (err, result) => {
+        if (err) {
+          console.error("Error recording payment:", err);
+          return res.status(500).json({ message: "Error recording payment" });
+        }
+
+        res.json({
+          id: result.insertId,
+          customerId,
+          customerName: customerName.trim(),
+          amount: parseFloat(amount),
+          paymentDate: new Date().toISOString().split('T')[0],
+          paymentTime: new Date().toTimeString().split(' ')[0]
+        });
+      });
+    });
+  });
+});
+
+app.get("/bread/stats", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  const query = `
+    SELECT 
+  COALESCE((SELECT SUM(billAmount) FROM bread_sales WHERE userId = ?), 0) as totalSales,
+  COALESCE((SELECT SUM(amount) FROM bread_payments WHERE userId = ?), 0) as totalPaid,
+  COALESCE((SELECT SUM(billAmount) FROM bread_sales WHERE userId = ?), 0) - 
+  COALESCE((SELECT SUM(amount) FROM bread_payments WHERE userId = ?), 0) as totalOutstanding,
+  COUNT(DISTINCT bc.id) as customerCount
+FROM bread_customers bc
+WHERE bc.userId = ?
+  `;
+
+  db.query(query, [userId, userId, userId, userId, userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching bread stats:", err);
+      return res.status(500).json({ message: "Error fetching statistics" });
+    }
+
+    const stats = results[0] || {
+      totalSales: 0,
+      totalPaid: 0,
+      totalOutstanding: 0,
+      customerCount: 0
+    };
+
+    // Ensure numbers are properly formatted
+    res.json({
+      totalSales: parseFloat(stats.totalSales || 0),
+      totalPaid: parseFloat(stats.totalPaid || 0),
+      totalOutstanding: parseFloat(stats.totalOutstanding || 0),
+      customerCount: parseInt(stats.customerCount || 0)
+    });
+  });
+});
+
+
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
