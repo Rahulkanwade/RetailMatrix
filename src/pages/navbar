@@ -1,25 +1,25 @@
-import React from 'react';
-// import { Link } from 'react-router-dom';
+// import React from 'react';
+// // import { Link } from 'react-router-dom';
 
-function Navbar({ user, handleLogout }) {
- return (
-  <nav style={{
-    padding: '10px 20px',
-    backgroundColor: '#f0f0f0',
-    display: 'flex',
-    justifyContent: 'flex-end', // 👈 This moves content to the right
-    alignItems: 'center'
-  }}>
-    {user && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <span style={{ fontWeight: 'bold' }}>{user.email}</span>
-        <button onClick={handleLogout}>Logout</button>
-      </div>
-    )}
+// function Navbar({ user, handleLogout }) {
+//  return (
+//   <nav style={{
+//     padding: '10px 20px',
+//     backgroundColor: '#f0f0f0',
+//     display: 'flex',
+//     justifyContent: 'flex-end', // 👈 This moves content to the right
+//     alignItems: 'center'
+//   }}>
+//     {user && (
+//       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+//         <span style={{ fontWeight: 'bold' }}>{user.email}</span>
+//         <button onClick={handleLogout}>Logout</button>
+//       </div>
+//     )}
     
-  </nav>
-);
+//   </nav>
+// );
 
-}
+// }
 
-export default Navbar;
+// export default Navbar;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Row,
@@ -36,8 +36,13 @@ const BreadSalesManager = () => {
   const [selectedCustomerHistory, setSelectedCustomerHistory] = useState(null);
   const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
+  const showAlert = useCallback((message, variant = 'success') => {
+    setAlert({ show: true, message, variant });
+    setTimeout(() => setAlert({ show: false, message: '', variant: 'success' }), 3000);
+  }, []);
+
   // API call helper with authentication
-  const apiCall = async (url, options = {}) => {
+  const apiCall = useCallback(async (url, options = {}) => {
     const config = {
       credentials: 'include',
       headers: {
@@ -65,15 +70,9 @@ const BreadSalesManager = () => {
       console.error('API call error:', error);
       throw error;
     }
-  };
+  }, [API_BASE]);
 
-  // Load initial data
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  const loadInitialData = async () => {
-
+  const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -98,12 +97,12 @@ const BreadSalesManager = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiCall, showAlert]);
 
-  const showAlert = (message, variant = 'success') => {
-    setAlert({ show: true, message, variant });
-    setTimeout(() => setAlert({ show: false, message: '', variant: 'success' }), 3000);
-  };
+  // Load initial data
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
 
   const updateBreadPrice = async () => {
     if (newPrice <= 0) {
@@ -179,7 +178,7 @@ const BreadSalesManager = () => {
     try {
       setLoading(true);
 
-      const paymentResponse = await apiCall('/bread/payments', {
+      await apiCall('/bread/payments', {
         method: 'POST',
         body: JSON.stringify({
           customerName: payment.customerName.trim(),
@@ -262,7 +261,6 @@ const BreadSalesManager = () => {
       return `${dateStr} ${timeStr}`; // Fallback
     }
   };
-
   const customStyles = `
     .modern-container {
       background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
@@ -766,7 +764,7 @@ const BreadSalesManager = () => {
                                   <td>
                                     <div className="d-flex align-items-center">
                                       <div className="rounded-circle bg-primary bg-opacity-10 p-2 me-2 d-none d-sm-block">
-                                        <span className="text-primary fw-bold" style={{fontSize: '0.8rem'}}>
+                                        <span className="text-primary fw-bold" style={{ fontSize: '0.8rem' }}>
                                           {customer.name.charAt(0).toUpperCase()}
                                         </span>
                                       </div>
@@ -833,7 +831,7 @@ const BreadSalesManager = () => {
                           <Form.Label className="fw-semibold text-dark">Customer Name</Form.Label>
                           <Form.Select
                             value={newSale.customerName}
-                        onChange={(e) => {
+                            onChange={(e) => {
                               setNewSale({ ...newSale, customerName: e.target.value });
                               if (e.target.value) {
                                 loadCustomerHistory(e.target.value);
@@ -1111,7 +1109,7 @@ const BreadSalesManager = () => {
                                 <td>
                                   <div className="d-flex align-items-center">
                                     <div className="rounded-circle bg-primary bg-opacity-10 p-2 me-2 d-none d-sm-block">
-                                      <span className="text-primary fw-bold" style={{fontSize: '0.8rem'}}>
+                                      <span className="text-primary fw-bold" style={{ fontSize: '0.8rem' }}>
                                         {customer.name.charAt(0).toUpperCase()}
                                       </span>
                                     </div>

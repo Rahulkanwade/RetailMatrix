@@ -429,7 +429,7 @@ const List = () => {
           background: #e2e8f0;
           border-radius: 4px;
           outline: none;
-          margin-bottom: 1rem
+          margin-bottom: 1rem;
       }
 
         .custom-range::-webkit-slider-thumb {

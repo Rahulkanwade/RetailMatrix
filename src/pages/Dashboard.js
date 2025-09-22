@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
-import { Container, Row, Col, Card, Badge, Spinner, Alert } from 'react-bootstrap';
+import { Container, Row, Col, Badge, Spinner, Alert } from 'react-bootstrap';
 import { BsCake, BsListCheck, BsCashCoin, BsWallet, BsTruck, BsCreditCard } from 'react-icons/bs';
 import './Dashboard.css'; // Import the CSS file
 

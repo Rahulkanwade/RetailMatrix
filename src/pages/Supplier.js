@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 export default function EnhancedSupplierManagement() {
@@ -86,11 +87,10 @@ export default function EnhancedSupplierManagement() {
     // API Base URL
     const API_BASE = 'http://localhost:5000';
 
-    // API helper function
-    const apiCall = async (endpoint, options = {}) => {
+    const apiCall = useCallback(async (endpoint, options = {}) => {
         try {
             const response = await fetch(`${API_BASE}${endpoint}`, {
-                credentials: 'include', // Important for cookie-based auth
+                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
@@ -108,9 +108,7 @@ export default function EnhancedSupplierManagement() {
             console.error('API call error:', error);
             throw error;
         }
-    };
-
-
+    }, [API_BASE]);
     useEffect(() => {
         let isMounted = true;
 
@@ -121,8 +119,30 @@ export default function EnhancedSupplierManagement() {
                 setLoading(true);
                 setError("");
                 const data = await apiCall('/suppliers');
+
                 if (isMounted) {
-                    setSuppliers(data);
+                    // Load suppliers with their products
+                    const suppliersWithProducts = await Promise.all(
+                        data.map(async (supplier) => {
+                            try {
+                                const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
+                                return {
+                                    ...supplier,
+                                    products: Array.isArray(productsData) ? productsData : []
+                                };
+                            } catch (error) {
+                                console.warn(`Could not load products for supplier ${supplier.id}:`, error);
+                                return {
+                                    ...supplier,
+                                    products: []
+                                };
+                            }
+                        })
+                    );
+
+                    if (isMounted) {
+                        setSuppliers(suppliersWithProducts);
+                    }
                 }
             } catch (error) {
                 if (isMounted) {
@@ -140,43 +160,9 @@ export default function EnhancedSupplierManagement() {
         return () => {
             isMounted = false;
         };
-    }, []);
-    // Load suppliers from backend
-    const loadSuppliers = async () => {
-        try {
-            setLoading(true);
-            setError("");
-            const data = await apiCall('/suppliers');
+    }, [apiCall]);
 
-            // If the API doesn't return products with each supplier, fetch them individually
-            const suppliersWithProducts = await Promise.all(
-                data.map(async (supplier) => {
-                    try {
-                        const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
-                        return {
-                            ...supplier,
-                            products: Array.isArray(productsData) ? productsData : []
-                        };
-                    } catch (error) {
-                        console.warn(`Could not load products for supplier ${supplier.id}:`, error);
-                        return {
-                            ...supplier,
-                            products: []
-                        };
-                    }
-                })
-            );
 
-            setSuppliers(suppliersWithProducts);
-        } catch (error) {
-            setError(`Failed to load suppliers: ${error.message}`);
-            console.error('Error loading suppliers:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    
     // 5. Safer date handling
     const formatDateForInput = (dateString) => {
         if (!dateString) return new Date().toISOString().split('T')[0];
@@ -236,6 +222,18 @@ export default function EnhancedSupplierManagement() {
             });
         }
     };
+const memoizedCalculateSupplierValue = useCallback((supplier) => {
+    const products = supplier?.products;
+    if (!Array.isArray(products)) return 0;
+
+    return products.reduce((total, product) => {
+        const price = Number(product.price) || 0;
+        const quantity = Number(product.quantity) || 0;
+        return total + (price * quantity);
+    }, 0);
+}, []);
+    
+
 
     // Add or update supplier
     const addSupplier = async () => {
@@ -266,7 +264,6 @@ export default function EnhancedSupplierManagement() {
             };
 
             if (isEditing && selectedSupplier) {
-                // Update existing supplier
                 await apiCall(`/suppliers/${selectedSupplier.id}`, {
                     method: 'PUT',
                     body: JSON.stringify(supplierData)
@@ -274,7 +271,6 @@ export default function EnhancedSupplierManagement() {
                 setIsEditing(false);
                 setSelectedSupplier(null);
             } else {
-                // Add new supplier
                 await apiCall('/suppliers', {
                     method: 'POST',
                     body: JSON.stringify(supplierData)
@@ -292,8 +288,22 @@ export default function EnhancedSupplierManagement() {
             setSelectedExistingSupplier("");
             setUseExistingSupplier(false);
 
-            // Reload suppliers
-            await loadSuppliers();
+            // Reload data using the same logic as initial load
+            const data = await apiCall('/suppliers');
+            const suppliersWithProducts = await Promise.all(
+                data.map(async (supplier) => {
+                    try {
+                        const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
+                        return {
+                            ...supplier,
+                            products: Array.isArray(productsData) ? productsData : []
+                        };
+                    } catch (error) {
+                        return { ...supplier, products: [] };
+                    }
+                })
+            );
+            setSuppliers(suppliersWithProducts);
 
         } catch (error) {
             setError(`Failed to ${isEditing ? 'update' : 'add'} supplier: ${error.message}`);
@@ -301,7 +311,6 @@ export default function EnhancedSupplierManagement() {
             setLoading(false);
         }
     };
-
     // Delete supplier
     const deleteSupplier = async (supplierId) => {
         if (!window.confirm("Are you sure you want to delete this supplier?")) {
@@ -314,7 +323,24 @@ export default function EnhancedSupplierManagement() {
             await apiCall(`/suppliers/${supplierId}`, {
                 method: 'DELETE'
             });
-            await loadSuppliers();
+
+            // Reload data
+            const data = await apiCall('/suppliers');
+            const suppliersWithProducts = await Promise.all(
+                data.map(async (supplier) => {
+                    try {
+                        const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
+                        return {
+                            ...supplier,
+                            products: Array.isArray(productsData) ? productsData : []
+                        };
+                    } catch (error) {
+                        return { ...supplier, products: [] };
+                    }
+                })
+            );
+            setSuppliers(suppliersWithProducts);
+
         } catch (error) {
             setError(`Failed to delete supplier: ${error.message}`);
         } finally {
@@ -324,20 +350,20 @@ export default function EnhancedSupplierManagement() {
 
 
     const removeProductFromEdit = (productIndex) => {
-    const updatedProducts = newSupplier.products.filter((_, index) => index !== productIndex);
-    setNewSupplier({
-        ...newSupplier,
-        products: updatedProducts
-    });
-};
+        const updatedProducts = newSupplier.products.filter((_, index) => index !== productIndex);
+        setNewSupplier({
+            ...newSupplier,
+            products: updatedProducts
+        });
+    };
     // Edit supplier
-    // Replace your existing editSupplier function with this improved version
-    const editSupplier = async (supplier) => {
+   const editSupplier = async (supplier) => {
+        let isMounted = true;
+
         try {
             setLoading(true);
             setError("");
 
-            // First, try to fetch the complete supplier data including products
             let supplierWithProducts;
             try {
                 supplierWithProducts = await apiCall(`/suppliers/${supplier.id}`);
@@ -346,13 +372,11 @@ export default function EnhancedSupplierManagement() {
                 supplierWithProducts = supplier;
             }
 
-            // Ensure products is always an array
+            if (!isMounted) return;
+
             const products = Array.isArray(supplierWithProducts.products) ? supplierWithProducts.products : [];
+            const formattedDate = formatDateForInput(supplierWithProducts.billDate);
 
-            console.log('Editing supplier with products:', products); // Debug log
-
-          const formattedDate = formatDateForInput(supplierWithProducts.billDate);
-            // Set the form data with all supplier information
             setNewSupplier({
                 name: supplierWithProducts.name || "",
                 contact: supplierWithProducts.contact || "",
@@ -363,16 +387,19 @@ export default function EnhancedSupplierManagement() {
 
             setIsEditing(true);
             setSelectedSupplier(supplierWithProducts);
-            setContactError(""); // Clear any contact errors
+            setContactError("");
 
         } catch (error) {
-            setError(`Failed to load supplier for editing: ${error.message}`);
-            console.error('Error in editSupplier:', error);
+            if (isMounted) {
+                setError(`Failed to load supplier for editing: ${error.message}`);
+            }
         } finally {
-            setLoading(false);
+            if (isMounted) {
+                setLoading(false);
+            }
         }
+        // Remove the return statement - this function shouldn't return anything
     };
-
 
     // Add product to supplier
     const addProduct = () => {
@@ -436,8 +463,11 @@ export default function EnhancedSupplierManagement() {
         setSelectedExistingSupplier("");
     };
 
-    // Generate filtered and sorted suppliers
-    const getFilteredSuppliers = () => {
+   
+
+   const filteredSuppliers = useMemo(() => {
+        if (!Array.isArray(suppliers)) return [];
+        
         return suppliers
             .filter(supplier => {
                 const matchesSearch = supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -457,10 +487,8 @@ export default function EnhancedSupplierManagement() {
                 }
                 return 0;
             });
-    };
+    }, [suppliers, searchTerm, sortField, sortDirection]);
 
-    // Pagination logic
-    const filteredSuppliers = getFilteredSuppliers();
     const totalPages = Math.ceil(filteredSuppliers.length / itemsPerPage);
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -479,44 +507,38 @@ export default function EnhancedSupplierManagement() {
         }
     };
 
-    // 6. Consistent product array handling
-    const calculateSupplierValue = (supplier) => {
-        const products = supplier?.products;
-        if (!Array.isArray(products)) return 0;
-
-        return products.reduce((total, product) => {
-            const price = Number(product.price) || 0;
-            const quantity = Number(product.quantity) || 0;
-            return total + (price * quantity);
-        }, 0);
-    };
+    
 
 
-    const fetchSupplierProducts = async (supplier) => {
+   const fetchSupplierProducts = async (supplier) => {
+        let isMounted = true;
+
         try {
             setLoadingProducts(true);
             setError("");
-
-            // Set supplier first to show modal
-            setSelectedSupplier(supplier);
+            setSelectedSupplier({ ...supplier, products: [] });
 
             const productsData = await apiCall(`/suppliers/${supplier.id}/products`);
 
-            // Only update products, preserve other supplier data
-            setSelectedSupplier(prev => ({
-                ...prev,
-                products: Array.isArray(productsData) ? productsData : []
-            }));
+            if (isMounted) {
+                setSelectedSupplier(prev => ({
+                    ...prev,
+                    products: Array.isArray(productsData) ? productsData : []
+                }));
+            }
 
         } catch (error) {
-            setError(`Failed to load products: ${error.message}`);
-            setSelectedSupplier(null);
+            if (isMounted) {
+                setError(`Failed to load products: ${error.message}`);
+                setSelectedSupplier(null);
+            }
         } finally {
-            setLoadingProducts(false);
+            if (isMounted) {
+                setLoadingProducts(false);
+            }
         }
+        // Remove the return statement - this function shouldn't return anything
     };
-
-
 
     return (
         <div className="container-fluid p-4">
@@ -729,35 +751,36 @@ export default function EnhancedSupplierManagement() {
 
                                         {/* Display added products */}
                                         {newSupplier.products.length > 0 && (
-    <div className="mt-3">
-        <h6>{isEditing ? 'Current Products:' : 'Added Products:'}</h6>
-        <ul className="list-group">
-            {newSupplier.products.map((product, index) => (
-                <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>{product.name}</strong> - {product.quantity} {product.unit} @ ₹{product.price}/unit
-                        <div className="small text-muted">
-                            Category: {productCategories.find(cat => cat.id === product.category)?.name || 'Other'}
-                            <br />
-                            Total: ₹{product.price * product.quantity}
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => removeProductFromEdit(index)}
-                        title="Remove this product"
-                    >
-                        ×
-                    </button>
-                </li>
-            ))}
-        </ul>
-        <div className="mt-2 text-end">
-            <strong>Total Value: ₹{calculateSupplierValue(newSupplier)}</strong>
-        </div>
-    </div>
-)}
+                                            <div className="mt-3">
+                                                <h6>{isEditing ? 'Current Products:' : 'Added Products:'}</h6>
+                                                <ul className="list-group">
+                                                    {newSupplier.products.map((product, index) => (
+                                                        <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                                                            <div>
+                                                                <strong>{product.name}</strong> - {product.quantity} {product.unit} @ ₹{product.price}/unit
+                                                                <div className="small text-muted">
+                                                                    Category: {productCategories.find(cat => cat.id === product.category)?.name || 'Other'}
+                                                                    <br />
+                                                                    Total: ₹{product.price * product.quantity}
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm btn-danger"
+                                                                onClick={() => removeProductFromEdit(index)}
+                                                                title="Remove this product"
+                                                            >
+                                                                ×
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                                <div className="mt-2 text-end">
+                                                     <strong>Total Value: ₹{memoizedCalculateSupplierValue(newSupplier)}</strong>
+
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -852,7 +875,7 @@ export default function EnhancedSupplierManagement() {
                                                     <td>{supplier.address || 'N/A'}</td>
                                                     <td>{supplier.billDate}</td>
                                                     <td>{supplier.productCount || supplier.products?.length || 0}</td>
-                                                    <td>₹{supplier.totalValue || calculateSupplierValue(supplier)}</td>
+                                                     <td>₹{supplier.totalValue || memoizedCalculateSupplierValue(supplier)}</td>
                                                     <td>
                                                         <div className="d-flex gap-1">
                                                             <button
@@ -951,7 +974,7 @@ export default function EnhancedSupplierManagement() {
                                             <p className="text-muted">{selectedSupplier.contact} | {selectedSupplier.address}</p>
                                             <div className="d-flex justify-content-between">
                                                 <p><strong>Bill Date:</strong> {selectedSupplier.billDate}</p>
-                                                <p><strong>Total Value:</strong> ₹{calculateSupplierValue(selectedSupplier)}</p>
+                                                <p><strong>Total Value:</strong> ₹{memoizedCalculateSupplierValue(selectedSupplier)}</p>
                                             </div>
                                         </div>
 
@@ -994,7 +1017,7 @@ export default function EnhancedSupplierManagement() {
                                                 <tfoot>
                                                     <tr>
                                                         <td colSpan="6" className="text-end"><strong>Total</strong></td>
-                                                        <td><strong>₹{calculateSupplierValue(selectedSupplier)}</strong></td>
+                                                        <td><strong>₹{memoizedCalculateSupplierValue(selectedSupplier)}</strong></td>
                                                     </tr>
                                                 </tfoot>
                                             </table>
