@@ -29,6 +29,7 @@ import {
 // This should be in a .env file in a real-world app
 const API_URL = "http://localhost:5000";
 
+
 const CakeManagement = () => {
     const [orders, setOrders] = useState([]);
     const [showModal, setShowModal] = useState(false);
@@ -161,30 +162,56 @@ const CakeManagement = () => {
     };
 
     const handleCakeChange = (index, field, value) => {
-        if (field === "quantity" || field === "price") {
-            if (parseInt(value) < 0 || isNaN(parseInt(value))) return;
-        }
-
-        const updatedCakes = [...newOrder.cakes];
-
-        if (field === "weight") {
-            if (updatedCakes.some((cake, i) => i !== index && cake.weight === value)) {
-                setError("This weight category has already been selected. Please choose a different one.");
+        // Enhanced quantity validation
+        if (field === "quantity") {
+            const qty = parseInt(value, 10); // Always specify radix
+            if (isNaN(qty) || qty < 1) {
+                console.warn(`Invalid quantity value: ${value}, skipping update`);
                 return;
             }
-            updatedCakes[index] = {
-                weight: value,
-                quantity: 1,
-                customWeight: "",
-                price: value === "Special Order" ? "" : cakePrices[value],
-            };
-        } else {
-            updatedCakes[index][field] = value;
         }
 
-        setNewOrder({ ...newOrder, cakes: updatedCakes });
+        if (field === "price") {
+            const price = parseFloat(value);
+            if (isNaN(price) || price < 0) {
+                console.warn(`Invalid price value: ${value}, skipping update`);
+                return;
+            }
+        }
+
+        // Use functional state update to avoid race conditions
+        setNewOrder(prevOrder => {
+            const updatedCakes = [...prevOrder.cakes];
+
+            if (field === "weight") {
+                // Check for duplicates against current state
+                if (updatedCakes.some((cake, i) => i !== index && cake.weight === value)) {
+                    setError("This weight category has already been selected. Please choose a different one.");
+                    return prevOrder; // Return unchanged state
+                }
+
+                updatedCakes[index] = {
+                    weight: value,
+                    quantity: 1,
+                    customWeight: "",
+                    price: value === "Special Order" ? "" : cakePrices[value],
+                };
+            } else {
+                // Ensure we're updating the correct field with correct type
+                if (field === "quantity") {
+                    updatedCakes[index][field] = parseInt(value, 10);
+                } else if (field === "price") {
+                    updatedCakes[index][field] = parseFloat(value);
+                } else {
+                    updatedCakes[index][field] = value;
+                }
+            }
+
+            return { ...prevOrder, cakes: updatedCakes };
+        });
     };
 
+   
     const handlePastryChange = (field, value) => {
         if (field === "quantity" && (parseInt(value) < 0 || isNaN(parseInt(value)))) return;
         const updatedPastries = [{ ...newOrder.pastries[0], [field]: value }];
@@ -218,6 +245,7 @@ const CakeManagement = () => {
 
     const addOrder = async () => {
         setError(""); // Clear previous errors
+
         if (!newOrder.customer.trim()) {
             setError("Please select a customer.");
             return;
@@ -231,20 +259,55 @@ const CakeManagement = () => {
             return;
         }
 
+        // Debug logging for quantities before processing
+        console.log("Order quantities before processing:",
+            newOrder.cakes.map(cake => ({
+                weight: cake.weight,
+                quantity: cake.quantity,
+                type: typeof cake.quantity
+            }))
+        );
+
         const orderWithPrices = {
             ...newOrder,
-            cakes: newOrder.cakes.map(cake => ({
-                ...cake,
-                price: cake.weight === "Special Order" ? parseInt(cake.price) || 0 : cakePrices[cake.weight],
-            })),
+            cakes: newOrder.cakes.map(cake => {
+                const processedCake = {
+                    ...cake,
+                    quantity: parseInt(cake.quantity, 10), // Ensure integer
+                    price: cake.weight === "Special Order" ?
+                        parseInt(cake.price) || 0 :
+                        cakePrices[cake.weight],
+                };
+
+                // Debug log for each cake
+                console.log(`Processing ${cake.weight} cake:`, {
+                    original: cake.quantity,
+                    processed: processedCake.quantity
+                });
+
+                return processedCake;
+            }),
             pastries: newOrder.pastries.map(pastry => ({
                 ...pastry,
+                quantity: parseInt(pastry.quantity, 10), // Ensure integer
                 price: pastryPrice,
             })),
             deliveryDate: "Pending",
         };
 
+        // Final validation of quantities
+        const invalidQuantities = orderWithPrices.cakes.filter(cake =>
+            isNaN(cake.quantity) || cake.quantity < 1
+        );
+
+        if (invalidQuantities.length > 0) {
+            setError("All cake quantities must be valid numbers greater than 0.");
+            console.error("Invalid quantities found:", invalidQuantities);
+            return;
+        }
+
         try {
+            console.log("Sending order to server:", orderWithPrices);
             await axios.post(`${API_URL}/orders`, orderWithPrices);
             fetchOrders();
             handleClose();
@@ -253,7 +316,7 @@ const CakeManagement = () => {
             setError("Failed to add order to the database.");
         }
     };
-
+    
     const updateDeliveryDate = async (orderId, date) => {
         try {
             await axios.put(`${API_URL}/orders/${orderId}`, { deliveryDate: date });
@@ -283,53 +346,69 @@ const CakeManagement = () => {
         }
     };
 
-    const calculateDailyRevenue = () => {
-        const dailyRevenue = {};
-        orders.forEach((order) => {
-            if (!dailyRevenue[order.orderDate]) {
-                dailyRevenue[order.orderDate] = 0;
-            }
-            dailyRevenue[order.orderDate] += calculateOrderTotal(order);
-        });
-        return dailyRevenue;
-    };
+   const calculateDailyRevenue = () => {
+    const dailyRevenue = {};
+    orders.forEach((order) => {
+        const dateKey = order.orderDate; // Keep original for grouping
+        if (!dailyRevenue[dateKey]) {
+            dailyRevenue[dateKey] = 0;
+        }
+        dailyRevenue[dateKey] += calculateOrderTotal(order);
+    });
+    return dailyRevenue;
+};
 
     const calculateOrderTotal = (order) => {
-        const cakeTotal = order.cakes.reduce((sum, cake) => sum + (cake.quantity * (cake.price || 0)), 0);
-        const pastryTotal = order.pastries.reduce((sum, pastry) => sum + (pastry.quantity * (pastry.price || 0)), 0);
-        return cakeTotal + pastryTotal;
+        let total = 0;
+
+        // Calculate cake total
+        for (let cake of order.cakes) {
+            const price = cake.price || 0;
+            const quantity = cake.quantity || 0;
+            total += quantity * price;
+        }
+
+        // Calculate pastry total
+        for (let pastry of order.pastries) {
+            const price = pastry.price || 0;
+            const quantity = pastry.quantity || 0;
+            total += quantity * price;
+        }
+
+        return total;
     };
 
     const dailyRevenue = calculateDailyRevenue();
     const totalMonthlyRevenue = Object.values(dailyRevenue).reduce((sum, amount) => sum + amount, 0);
 
-    const formatDateTime = (isoString) => {
-        if (!isoString) return '';
-        try {
-            const date = new Date(isoString);
-            const options = {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            };
-            return date.toLocaleDateString('en-US', options);
-        } catch (e) {
-            console.error("Invalid date string:", isoString);
-            return isoString;
-        }
-    };
+   const formatDateTime = (isoString) => {
+    if (!isoString) return '';
+    try {
+        const date = new Date(isoString);
+        const options = {
+            weekday: 'long',    // Friday
+            day: 'numeric',     // 26
+            month: 'long',      // September
+            year: 'numeric'     // 2025
+        };
+        return date.toLocaleDateString('en-US', options);
+    } catch (e) {
+        console.error("Invalid date string:", isoString);
+        return isoString;
+    }
+};
 
     return (
         <Container fluid className="py-5 px-4 bg-light min-vh-100">
             <div className="d-flex justify-content-between align-items-center mb-5">
                 <h2 className="text-primary fw-bold display-5">
                     <BsCake className="me-3" />
-                  Retail Matrix
+                    Retail Matrix
                 </h2>
                 <Button variant="primary" onClick={handleShow} className="d-flex align-items-center" size="lg">
                     <BsFillCartPlusFill className="me-2" /> Add New Order
                 </Button>
-                
+
             </div>
 
             {error && (
@@ -435,7 +514,7 @@ const CakeManagement = () => {
                                         <tbody>
                                             {Object.entries(dailyRevenue).map(([date, amount]) => (
                                                 <tr key={date}>
-                                                    <td>{date}</td>
+                                                    <td>{formatDateTime(date)}</td>
                                                     <td className="text-end">₹{amount.toLocaleString()}</td>
                                                 </tr>
                                             ))}
@@ -449,12 +528,12 @@ const CakeManagement = () => {
                                     </Table>
                                 </Card.Body>
                                 <Button
-                    variant="outline-success"
-                    className="mb-3"
-                    onClick={handleGoToPayments}
-                >
-                    Go to Payment Management
-                </Button>
+                                    variant="outline-success"
+                                    className="mb-3"
+                                    onClick={handleGoToPayments}
+                                >
+                                    Go to Payment Management
+                                </Button>
                             </Card>
                         </Col>
                     </Row>

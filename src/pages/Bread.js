@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+
 import {
   Container,
   Row,
@@ -127,35 +128,43 @@ const BreadSalesManager = () => {
     }
   };
 
-  const addSale = async () => {
-    if (!newSale.customerName.trim() || !newSale.quantity || newSale.quantity <= 0) {
-      showAlert('Please enter valid customer name and quantity', 'danger');
-      return;
-    }
+ const addSale = async () => {
+  const trimmedCustomerName = newSale.customerName.trim();
+  
+  if (!trimmedCustomerName || !newSale.quantity || newSale.quantity <= 0) {
+    showAlert('Please enter valid customer name and quantity', 'danger');
+    return;
+  }
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const saleData = await apiCall('/bread/sales', {
-        method: 'POST',
-        body: JSON.stringify({
-          customerName: newSale.customerName.trim(),
-          quantity: parseFloat(newSale.quantity),
-          pricePerDozen: breadPrice,
-        }),
-      });
+    const saleData = await apiCall('/bread/sales', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerName: trimmedCustomerName,
+        quantity: parseFloat(newSale.quantity),
+        pricePerDozen: breadPrice,
+      }),
+    });
 
-      // Reload data to get updated customer list and stats
-      await loadInitialData();
+    // Reload data to get updated customer list and stats
+    await loadInitialData();
 
-      setNewSale({ customerName: '', quantity: '' });
-      showAlert(`Sale added successfully! Bill: ₹${saleData.billAmount.toFixed(2)}`, 'success');
-    } catch (error) {
-      showAlert('Error adding sale: ' + error.message, 'danger');
-    } finally {
-      setLoading(false);
-    }
-  };
+    setNewSale({ customerName: '', quantity: '' });
+    
+    const isNewCustomer = !customers.find(c => c.name === trimmedCustomerName);
+    const successMessage = isNewCustomer 
+      ? `New customer "${trimmedCustomerName}" created! Sale added successfully! Bill: ₹${saleData.billAmount.toFixed(2)}`
+      : `Sale added successfully! Bill: ₹${saleData.billAmount.toFixed(2)}`;
+      
+    showAlert(successMessage, 'success');
+  } catch (error) {
+    showAlert('Error adding sale: ' + error.message, 'danger');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const recordPayment = async () => {
     if (!payment.customerName.trim() || !payment.amount || payment.amount <= 0) {
@@ -816,104 +825,160 @@ const BreadSalesManager = () => {
             </>
           )}
 
-          {/* Add Sale Tab */}
-          {activeTab === 'sales' && (
-            <Row className="justify-content-center">
-              <Col xl={10} lg={12}>
-                <Card className="glass-card border-0">
-                  <Card.Header className="card-header-modern">
-                    <h4 className="mb-0 fw-bold text-dark">🛒 Add New Sale</h4>
-                  </Card.Header>
-                  <Card.Body>
-                    <Form className="form-modern">
-                      <Row className="g-3">
-                        <Col md={6}>
-                          <Form.Label className="fw-semibold text-dark">Customer Name</Form.Label>
-                          <Form.Select
-                            value={newSale.customerName}
-                            onChange={(e) => {
-                              setNewSale({ ...newSale, customerName: e.target.value });
-                              if (e.target.value) {
-                                loadCustomerHistory(e.target.value);
-                              } else {
-                                setSelectedCustomerHistory(null);
-                              }
-                            }}
-                          >
-                            <option value="">Select a customer...</option>
-                            {customers.map((customer, index) => (
-                              <option key={index} value={customer.name}>
-                                {customer.name} - Balance: ₹{customer.balance}
-                              </option>
-                            ))}
-                          </Form.Select>
-                        </Col>
-                        <Col md={6}>
-                          <Form.Label className="fw-semibold text-dark">Quantity (dozens)</Form.Label>
-                          <Form.Control
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            placeholder="Enter quantity"
-                            value={newSale.quantity}
-                            onChange={(e) => setNewSale({ ...newSale, quantity: e.target.value })}
-                          />
-                        </Col>
-                      </Row>
-                      <Row className="g-3">
-                        <Col>
-                          <div className="bg-light bg-opacity-50 p-3 rounded-3 mt-3">
-                            <Row className="g-2">
-                              <Col md={4} sm={12}>
-                                <div className="text-center text-md-start">
-                                  <strong>Price per dozen:</strong><br />
-                                  <span className="text-primary fs-5">₹{breadPrice}</span>
-                                </div>
-                              </Col>
-                              <Col md={4} sm={6}>
-                                <div className="text-center text-md-start">
-                                  <strong>Total quantity:</strong><br />
-                                  <span className="text-info fs-5">{newSale.quantity || 0} dozens</span>
-                                </div>
-                              </Col>
-                              <Col md={4} sm={6}>
-                                <div className="text-center text-md-start">
-                                  <strong>Bill amount:</strong><br />
-                                  <span className="text-success fs-5">
-                                    ₹{(parseFloat(newSale.quantity || 0) * breadPrice).toFixed(2)}
-                                  </span>
-                                </div>
-                              </Col>
-                            </Row>
-                          </div>
-                        </Col>
-                      </Row>
-                    </Form>
-                  </Card.Body>
-                  <Card.Footer className="card-footer-modern">
-                    <div className="d-flex justify-content-end">
-                      <Button
-                        className="btn-modern"
-                        variant="success"
-                        onClick={addSale}
-                        disabled={loading}
-                        size="lg"
-                      >
-                        {loading ? (
-                          <>
-                            <Spinner animation="border" size="sm" className="me-2" />
-                            Adding Sale...
-                          </>
-                        ) : (
-                          '✅ Add Sale'
-                        )}
-                      </Button>
+          {/* Add Sale Tab - Enhanced Customer Input */}
+{activeTab === 'sales' && (
+  <Row className="justify-content-center">
+    <Col xl={10} lg={12}>
+      <Card className="glass-card border-0">
+        <Card.Header className="card-header-modern">
+          <h4 className="mb-0 fw-bold text-dark">🛒 Add New Sale</h4>
+        </Card.Header>
+        <Card.Body>
+          <Form className="form-modern">
+            <Row className="g-3">
+              <Col md={6}>
+                <Form.Label className="fw-semibold text-dark">Customer Name</Form.Label>
+                <div className="position-relative">
+                  <Form.Control
+                    type="text"
+                    placeholder="Enter customer name or select existing..."
+                    value={newSale.customerName}
+                    onChange={(e) => {
+                      setNewSale({ ...newSale, customerName: e.target.value });
+                      // Clear history when typing new name
+                      if (!customers.find(c => c.name === e.target.value)) {
+                        setSelectedCustomerHistory(null);
+                      } else {
+                        loadCustomerHistory(e.target.value);
+                      }
+                    }}
+                    list="customer-suggestions"
+                  />
+                  <datalist id="customer-suggestions">
+                    {customers.map((customer, index) => (
+                      <option key={index} value={customer.name}>
+                        {customer.name} - Balance: ₹{customer.balance}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+                
+                {/* Show customer info if existing customer is selected */}
+                {customers.find(c => c.name === newSale.customerName) && (
+                  <div className="mt-2">
+                    <small className="text-muted">
+                      Existing customer - Current balance: ₹
+                      {customers.find(c => c.name === newSale.customerName)?.balance || 0}
+                    </small>
+                  </div>
+                )}
+                
+                {/* Show new customer indicator */}
+                {newSale.customerName && !customers.find(c => c.name === newSale.customerName.trim()) && (
+                  <div className="mt-2">
+                    <Badge bg="info" className="badge-modern">
+                      ✨ New Customer
+                    </Badge>
+                    <small className="text-muted d-block">
+                      This will create a new customer record
+                    </small>
+                  </div>
+                )}
+                
+                {/* Quick select buttons for frequent customers */}
+                {customers.length > 0 && !newSale.customerName && (
+                  <div className="mt-2">
+                    <small className="text-muted d-block mb-2">Quick select:</small>
+                    <div className="d-flex flex-wrap gap-1">
+                      {customers.slice(0, 3).map((customer, index) => (
+                        <Button
+                          key={index}
+                          size="sm"
+                          variant="outline-primary"
+                          className="btn-modern"
+                          style={{ fontSize: '0.75rem' }}
+                          onClick={() => {
+                            setNewSale({ ...newSale, customerName: customer.name });
+                            loadCustomerHistory(customer.name);
+                          }}
+                        >
+                          {customer.name}
+                        </Button>
+                      ))}
                     </div>
-                  </Card.Footer>
-                </Card>
+                  </div>
+                )}
+              </Col>
+              <Col md={6}>
+                <Form.Label className="fw-semibold text-dark">Quantity (dozens)</Form.Label>
+                <Form.Control
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  placeholder="Enter quantity"
+                  value={newSale.quantity}
+                  onChange={(e) => setNewSale({ ...newSale, quantity: e.target.value })}
+                />
               </Col>
             </Row>
-          )}
+            
+            {/* Rest of the form remains the same... */}
+            <Row className="g-3">
+              <Col>
+                <div className="bg-light bg-opacity-50 p-3 rounded-3 mt-3">
+                  <Row className="g-2">
+                    <Col md={4} sm={12}>
+                      <div className="text-center text-md-start">
+                        <strong>Price per dozen:</strong><br />
+                        <span className="text-primary fs-5">₹{breadPrice}</span>
+                      </div>
+                    </Col>
+                    <Col md={4} sm={6}>
+                      <div className="text-center text-md-start">
+                        <strong>Total quantity:</strong><br />
+                        <span className="text-info fs-5">{newSale.quantity || 0} dozens</span>
+                      </div>
+                    </Col>
+                    <Col md={4} sm={6}>
+                      <div className="text-center text-md-start">
+                        <strong>Bill amount:</strong><br />
+                        <span className="text-success fs-5">
+                          ₹{(parseFloat(newSale.quantity || 0) * breadPrice).toFixed(2)}
+                        </span>
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              </Col>
+            </Row>
+          </Form>
+        </Card.Body>
+        <Card.Footer className="card-footer-modern">
+          <div className="d-flex justify-content-end">
+            <Button
+              className="btn-modern"
+              variant="success"
+              onClick={addSale}
+              disabled={loading}
+              size="lg"
+            >
+              {loading ? (
+                <>
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Adding Sale...
+                </>
+              ) : (
+                newSale.customerName && !customers.find(c => c.name === newSale.customerName.trim()) 
+                  ? '✨ Add Sale & Create Customer' 
+                  : '✅ Add Sale'
+              )}
+            </Button>
+          </div>
+        </Card.Footer>
+      </Card>
+    </Col>
+  </Row>
+)}
 
           {/* Record Payment Tab */}
           {activeTab === 'payments' && (

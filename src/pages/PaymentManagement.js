@@ -2,14 +2,14 @@ import React, { useState, useEffect } from "react";
 
 import { Table, Button, Modal, Form, Row, Col, Card, Badge, Container, Alert, ProgressBar } from "react-bootstrap";
 import axios from "axios";
-import { 
-    BsCurrencyRupee, 
-    BsWallet2, 
-    BsPlusCircle, 
-    BsPerson, 
-    BsCalendar, 
-    BsCreditCard, 
-    BsCheckCircle, 
+import {
+    BsCurrencyRupee,
+    BsWallet2,
+    BsPlusCircle,
+    BsPerson,
+    BsCalendar,
+    BsCreditCard,
+    BsCheckCircle,
     BsExclamationTriangle,
     BsCake,
     BsEye,
@@ -18,6 +18,19 @@ import {
 
 
 const API_URL = "http://localhost:5000";
+const roundToTwoDecimals = (num) => {
+    return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+const formatDateToReadable = (dateString) => {
+    const date = new Date(dateString);
+    const options = {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    };
+    return date.toLocaleDateString('en-GB', options);
+};
 
 const PaymentManagement = () => {
     const [payments, setPayments] = useState([]);
@@ -106,8 +119,8 @@ const PaymentManagement = () => {
             return;
         }
 
-        const selectedCustomerData = getCustomerPaymentSummary().find(c => 
-            c.customerName === newPayment.customerName || 
+        const selectedCustomerData = getCustomerPaymentSummary().find(c =>
+            c.customerName === newPayment.customerName ||
             getCustomerIdByName(c.customerName) === newPayment.customerId
         );
 
@@ -117,7 +130,7 @@ const PaymentManagement = () => {
         }
 
         const paymentAmount = parseFloat(newPayment.amount);
-        
+
         if (paymentAmount <= 0 || isNaN(paymentAmount)) {
             alert("Payment amount must be a valid number greater than 0.");
             return;
@@ -173,14 +186,14 @@ const PaymentManagement = () => {
             const cakeQuantity = parseFloat(cake.quantity) || 0;
             return sum + (cakeQuantity * cakePrice);
         }, 0) || 0;
-        
+
         const pastryTotal = order.pastries?.reduce((sum, pastry) => {
             const pastryPrice = parseFloat(pastry.price) || 0;
             const pastryQuantity = parseFloat(pastry.quantity) || 0;
             return sum + (pastryQuantity * pastryPrice);
         }, 0) || 0;
-        
-        return cakeTotal + pastryTotal;
+
+        return roundToTwoDecimals(cakeTotal + pastryTotal);
     };
 
     const getCustomerIdByName = (customerName) => {
@@ -190,7 +203,7 @@ const PaymentManagement = () => {
 
     const getCustomerPaymentSummary = () => {
         const customerSummary = {};
-        
+
         // Initialize customer summaries from orders
         orders.forEach(order => {
             const customerName = order.customer;
@@ -218,28 +231,28 @@ const PaymentManagement = () => {
         // Calculate total payments and remaining amounts for each customer
         Object.keys(customerSummary).forEach(customerName => {
             const customer = customerSummary[customerName];
-            
+
             // Find all payments for this customer
             const customerPayments = payments.filter(payment => {
                 const paymentCustomerName = payment.customerName || "";
                 const paymentCustomerId = payment.customerId || "";
-                return paymentCustomerName === customerName || 
-                       paymentCustomerId === customer.customerId ||
-                       paymentCustomerId.toString() === customer.customerId.toString();
+                return paymentCustomerName === customerName ||
+                    paymentCustomerId === customer.customerId ||
+                    paymentCustomerId.toString() === customer.customerId.toString();
             });
-            
-            // Calculate total paid with proper number handling
+
+            // Calculate total paid with proper number handling and rounding
             customer.totalPaid = customerPayments.reduce((sum, payment) => {
                 const paymentAmount = parseFloat(payment.amount) || 0;
                 return sum + paymentAmount;
             }, 0);
-            
-            // Ensure totalOrderValue is a number
-            customer.totalOrderValue = parseFloat(customer.totalOrderValue) || 0;
-            customer.totalPaid = parseFloat(customer.totalPaid) || 0;
-            
-            // Calculate remaining amount
-            customer.totalRemaining = Math.max(0, customer.totalOrderValue - customer.totalPaid);
+
+            // Ensure totalOrderValue is a number and round both values
+            customer.totalOrderValue = roundToTwoDecimals(parseFloat(customer.totalOrderValue) || 0);
+            customer.totalPaid = roundToTwoDecimals(parseFloat(customer.totalPaid) || 0);
+
+            // Calculate remaining amount with proper rounding
+            customer.totalRemaining = Math.max(0, roundToTwoDecimals(customer.totalOrderValue - customer.totalPaid));
 
             // Distribute payments across orders (FIFO - First In, First Out)
             let remainingPaymentAmount = customer.totalPaid;
@@ -247,12 +260,14 @@ const PaymentManagement = () => {
                 let orderPaid = 0;
                 if (remainingPaymentAmount > 0 && order.orderTotal > 0) {
                     orderPaid = Math.min(remainingPaymentAmount, order.orderTotal);
-                    remainingPaymentAmount -= orderPaid;
+                    remainingPaymentAmount = roundToTwoDecimals(remainingPaymentAmount - orderPaid);
                 }
-                
-                const orderRemaining = Math.max(0, order.orderTotal - orderPaid);
-                const paymentStatus = orderRemaining === 0 ? 'Paid' : 
-                                    orderPaid === 0 ? 'Unpaid' : 'Partial';
+
+                // Round the order calculations
+                orderPaid = roundToTwoDecimals(orderPaid);
+                const orderRemaining = Math.max(0, roundToTwoDecimals(order.orderTotal - orderPaid));
+                const paymentStatus = orderRemaining === 0 ? 'Paid' :
+                    orderPaid === 0 ? 'Unpaid' : 'Partial';
 
                 return {
                     ...order,
@@ -289,9 +304,9 @@ const PaymentManagement = () => {
                     <BsWallet2 className="me-2" />
                     Payment Management
                 </h2>
-                <Button 
-                    variant="success" 
-                    onClick={() => setShowPaymentModal(true)} 
+                <Button
+                    variant="success"
+                    onClick={() => setShowPaymentModal(true)}
                     className="d-flex align-items-center"
                     size="lg"
                 >
@@ -321,10 +336,10 @@ const PaymentManagement = () => {
                                 </thead>
                                 <tbody>
                                     {customerSummary.map((customer, index) => {
-                                        const paymentPercentage = customer.totalOrderValue > 0 
-                                            ? (customer.totalPaid / customer.totalOrderValue) * 100 
+                                        const paymentPercentage = customer.totalOrderValue > 0
+                                            ? (customer.totalPaid / customer.totalOrderValue) * 100
                                             : 0;
-                                        
+
                                         return (
                                             <tr key={index}>
                                                 <td>
@@ -347,10 +362,10 @@ const PaymentManagement = () => {
                                                 </td>
                                                 <td className="text-center">
                                                     <div className="mb-1">
-                                                        <ProgressBar 
-                                                            now={isNaN(paymentPercentage) ? 0 : paymentPercentage} 
+                                                        <ProgressBar
+                                                            now={isNaN(paymentPercentage) ? 0 : paymentPercentage}
                                                             variant={paymentPercentage === 100 ? 'success' : paymentPercentage > 0 ? 'warning' : 'danger'}
-                                                            style={{height: '8px'}}
+                                                            style={{ height: '8px' }}
                                                         />
                                                     </div>
                                                     <Badge bg={paymentPercentage === 100 ? 'success' : paymentPercentage > 0 ? 'warning' : 'danger'}>
@@ -359,16 +374,16 @@ const PaymentManagement = () => {
                                                 </td>
                                                 <td className="text-center">
                                                     <div className="d-flex gap-2 justify-content-center">
-                                                        <Button 
-                                                            variant="outline-primary" 
+                                                        <Button
+                                                            variant="outline-primary"
                                                             size="sm"
                                                             onClick={() => showCustomerDetails(customer)}
                                                         >
                                                             <BsEye className="me-1" /> Details
                                                         </Button>
                                                         {customer.totalRemaining > 0 && (
-                                                            <Button 
-                                                                variant="outline-success" 
+                                                            <Button
+                                                                variant="outline-success"
                                                                 size="sm"
                                                                 onClick={() => {
                                                                     handleCustomerSelect(customer.customerId, customer.customerName);
@@ -412,7 +427,7 @@ const PaymentManagement = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {customerSummary.flatMap(customer => 
+                                    {customerSummary.flatMap(customer =>
                                         customer.orders.map((order, index) => (
                                             <tr key={`${customer.customerName}-${index}`}>
                                                 <td>
@@ -429,9 +444,10 @@ const PaymentManagement = () => {
                                                 <td>
                                                     <div className="d-flex align-items-center">
                                                         <BsCalendar className="me-2" />
-                                                        {order.orderDate}
+                                                        {formatDateToReadable(order.orderDate)}
                                                     </div>
                                                 </td>
+
                                                 <td className="text-end">₹{(order.orderTotal || 0).toLocaleString()}</td>
                                                 <td className="text-end text-success">₹{(order.totalPaid || 0).toLocaleString()}</td>
                                                 <td className="text-end">
@@ -441,8 +457,8 @@ const PaymentManagement = () => {
                                                 </td>
                                                 <td className="text-center">
                                                     <Badge bg={
-                                                        order.paymentStatus === 'Paid' ? 'success' : 
-                                                        order.paymentStatus === 'Partial' ? 'warning' : 'danger'
+                                                        order.paymentStatus === 'Paid' ? 'success' :
+                                                            order.paymentStatus === 'Partial' ? 'warning' : 'danger'
                                                     } className="px-3 py-2">
                                                         {order.paymentStatus === 'Paid' && <BsCheckCircle className="me-1" />}
                                                         {order.paymentStatus === 'Partial' && <BsExclamationTriangle className="me-1" />}
@@ -499,7 +515,7 @@ const PaymentManagement = () => {
                                             <td>
                                                 <div className="d-flex align-items-center">
                                                     <BsCalendar className="me-2" />
-                                                    {payment.paymentDate}
+                                                    {formatDateToReadable(payment.paymentDate)}
                                                 </div>
                                             </td>
                                             <td>
@@ -546,23 +562,23 @@ const PaymentManagement = () => {
                 <Modal.Body>
                     <Alert variant="info" className="mb-3">
                         <BsInfoCircle className="me-2" />
-                        <strong>Customer Payment:</strong> Pay any amount toward the customer's total outstanding balance. 
+                        <strong>Customer Payment:</strong> Pay any amount toward the customer's total outstanding balance.
                         The payment will be automatically allocated to their oldest unpaid orders first.
                     </Alert>
-                    
+
                     <Form>
                         <Row>
                             <Col md={6}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Select Customer</Form.Label>
-                                    <Form.Select 
-                                        value={newPayment.customerName} 
+                                    <Form.Select
+                                        value={newPayment.customerName}
                                         onChange={(e) => {
                                             const selectedCustomer = customersWithBalance.find(c => c.customerName === e.target.value);
                                             if (selectedCustomer) {
                                                 handleCustomerSelect(selectedCustomer.customerId, selectedCustomer.customerName);
                                             } else {
-                                                setNewPayment({...newPayment, customerId: "", customerName: ""});
+                                                setNewPayment({ ...newPayment, customerId: "", customerName: "" });
                                             }
                                         }}
                                     >
@@ -578,10 +594,10 @@ const PaymentManagement = () => {
                             <Col md={6}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Payment Date</Form.Label>
-                                    <Form.Control 
-                                        type="date" 
-                                        value={newPayment.paymentDate} 
-                                        onChange={(e) => setNewPayment({...newPayment, paymentDate: e.target.value})} 
+                                    <Form.Control
+                                        type="date"
+                                        value={newPayment.paymentDate}
+                                        onChange={(e) => setNewPayment({ ...newPayment, paymentDate: e.target.value })}
                                     />
                                 </Form.Group>
                             </Col>
@@ -590,11 +606,11 @@ const PaymentManagement = () => {
                             <Col md={6}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Payment Amount (₹)</Form.Label>
-                                    <Form.Control 
-                                        type="number" 
+                                    <Form.Control
+                                        type="number"
                                         placeholder="Enter any amount"
-                                        value={newPayment.amount} 
-                                        onChange={(e) => setNewPayment({...newPayment, amount: e.target.value})} 
+                                        value={newPayment.amount}
+                                        onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })}
                                         min="0.01"
                                         step="0.01"
                                     />
@@ -603,9 +619,9 @@ const PaymentManagement = () => {
                             <Col md={6}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Payment Method</Form.Label>
-                                    <Form.Select 
-                                        value={newPayment.paymentMethod} 
-                                        onChange={(e) => setNewPayment({...newPayment, paymentMethod: e.target.value})}
+                                    <Form.Select
+                                        value={newPayment.paymentMethod}
+                                        onChange={(e) => setNewPayment({ ...newPayment, paymentMethod: e.target.value })}
                                     >
                                         {paymentMethods.map((method) => (
                                             <option key={method} value={method}>{method}</option>
@@ -618,17 +634,17 @@ const PaymentManagement = () => {
                             <Col md={12}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Notes (Optional)</Form.Label>
-                                    <Form.Control 
-                                        as="textarea" 
+                                    <Form.Control
+                                        as="textarea"
                                         rows={2}
                                         placeholder="Add any notes about this payment"
-                                        value={newPayment.notes} 
-                                        onChange={(e) => setNewPayment({...newPayment, notes: e.target.value})} 
+                                        value={newPayment.notes}
+                                        onChange={(e) => setNewPayment({ ...newPayment, notes: e.target.value })}
                                     />
                                 </Form.Group>
                             </Col>
                         </Row>
-                        
+
                         {newPayment.customerName && (
                             <Alert variant="info">
                                 <strong>Customer Summary:</strong>
@@ -728,7 +744,8 @@ const PaymentManagement = () => {
                                     {selectedCustomer.orders.map((order, index) => (
                                         <tr key={index}>
                                             <td>#{order.id || index + 1}</td>
-                                            <td>{order.orderDate}</td>
+                                            <td>{formatDateToReadable(order.orderDate)}</td>
+
                                             <td>₹{order.orderTotal.toLocaleString()}</td>
                                             <td className="text-success">₹{order.totalPaid.toLocaleString()}</td>
                                             <td className={order.remainingAmount > 0 ? 'text-danger' : 'text-success'}>
@@ -736,8 +753,8 @@ const PaymentManagement = () => {
                                             </td>
                                             <td>
                                                 <Badge bg={
-                                                    order.paymentStatus === 'Paid' ? 'success' : 
-                                                    order.paymentStatus === 'Partial' ? 'warning' : 'danger'
+                                                    order.paymentStatus === 'Paid' ? 'success' :
+                                                        order.paymentStatus === 'Partial' ? 'warning' : 'danger'
                                                 }>
                                                     {order.paymentStatus}
                                                 </Badge>
@@ -746,7 +763,7 @@ const PaymentManagement = () => {
                                     ))}
                                 </tbody>
                             </Table>
-                     </>
+                        </>
                     )}
                 </Modal.Body>
                 <Modal.Footer>

@@ -490,30 +490,308 @@ app.put("/prices", authenticateToken, (req, res) => {
 });
 
 // --- Expense Management ---
-app.post('/add-expense', authenticateToken, (req, res) => {
-  const userId = req.user.id;
-  const { name, quantity, unit, price, date } = req.body;
-  const query = 'INSERT INTO expenses (name, quantity, unit, price, date, userId) VALUES (?, ?, ?, ?, ?, ?)';
-  db.query(query, [name, quantity, unit, price, date, userId], (err, result) => {
-    if (err) {
-      console.error('Error inserting expense:', err);
-      return res.status(500).send('Server error');
-    }
-    res.status(201).send('Expense added');
-  });
-});
 
-app.get('/expenses', authenticateToken, (req, res) => {
+// Add these expense management endpoints to your existing backend code
+// Place these after your existing routes, before the "Server Startup" section
+
+// --- Expense Management ---
+
+// Get all expenses for the authenticated user
+app.get("/expenses", authenticateToken, (req, res) => {
   const userId = req.user.id;
-  db.query('SELECT * FROM expenses WHERE userId = ? ORDER BY date DESC', [userId], (err, results) => {
+  const query = `
+    SELECT * FROM expenses 
+    WHERE userId = ? 
+    ORDER BY date DESC, createdAt DESC
+  `;
+  
+  db.query(query, [userId], (err, results) => {
     if (err) {
-      console.error('Error fetching expenses:', err);
-      return res.status(500).send('Server error');
+      console.error("Error fetching expenses:", err);
+      return res.status(500).json({ error: "Failed to fetch expenses" });
     }
     res.json(results);
   });
 });
 
+// Add new expenses (can handle multiple expenses at once)
+app.post("/expenses", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { expenses } = req.body;
+
+  // Validate input
+  if (!expenses || !Array.isArray(expenses) || expenses.length === 0) {
+    return res.status(400).json({ error: "Expenses array is required" });
+  }
+
+  // Validate each expense item
+  const invalidExpenses = expenses.filter(expense => 
+    !expense.itemName || 
+    !expense.category || 
+    !expense.quantity || 
+    !expense.pricePerUnit || 
+    !expense.unit ||
+    parseFloat(expense.quantity) <= 0 ||
+    parseFloat(expense.pricePerUnit) <= 0
+  );
+
+  if (invalidExpenses.length > 0) {
+    return res.status(400).json({ 
+      error: "All expense fields are required and quantity/price must be positive" 
+    });
+  }
+
+  // Prepare bulk insert query
+  const insertQuery = `
+    INSERT INTO expenses (itemName, category, quantity, pricePerUnit, totalAmount, date, unit, userId)
+    VALUES ?
+  `;
+
+  const expenseValues = expenses.map(expense => [
+    expense.itemName,
+    expense.category,
+    parseFloat(expense.quantity),
+    parseFloat(expense.pricePerUnit),
+    parseFloat(expense.quantity) * parseFloat(expense.pricePerUnit), // totalAmount
+    expense.date || new Date().toISOString().split('T')[0], // current date if not provided
+    expense.unit,
+    userId
+  ]);
+
+  db.query(insertQuery, [expenseValues], (err, result) => {
+    if (err) {
+      console.error("Error adding expenses:", err);
+      return res.status(500).json({ error: "Failed to add expenses" });
+    }
+
+    // Return the added expenses with generated IDs
+    const addedExpenses = expenses.map((expense, index) => ({
+      id: result.insertId + index,
+      ...expense,
+      quantity: parseFloat(expense.quantity),
+      pricePerUnit: parseFloat(expense.pricePerUnit),
+      totalAmount: parseFloat(expense.quantity) * parseFloat(expense.pricePerUnit),
+      date: expense.date || new Date().toISOString().split('T')[0],
+      userId
+    }));
+
+    res.status(201).json({
+      message: "Expenses added successfully",
+      expenses: addedExpenses
+    });
+  });
+});
+
+// Update an expense
+app.put("/expenses/:id", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const expenseId = req.params.id;
+  const { itemName, category, quantity, pricePerUnit, unit, date } = req.body;
+
+  // Validate input
+  if (!itemName || !category || !quantity || !pricePerUnit || !unit) {
+    return res.status(400).json({ error: "All expense fields are required" });
+  }
+
+  if (parseFloat(quantity) <= 0 || parseFloat(pricePerUnit) <= 0) {
+    return res.status(400).json({ error: "Quantity and price must be positive" });
+  }
+
+  const totalAmount = parseFloat(quantity) * parseFloat(pricePerUnit);
+  
+  const updateQuery = `
+    UPDATE expenses 
+    SET itemName = ?, category = ?, quantity = ?, pricePerUnit = ?, 
+        totalAmount = ?, unit = ?, date = ?
+    WHERE id = ? AND userId = ?
+  `;
+
+  db.query(updateQuery, [
+    itemName,
+    category,
+    parseFloat(quantity),
+    parseFloat(pricePerUnit),
+    totalAmount,
+    unit,
+    date || new Date().toISOString().split('T')[0],
+    expenseId,
+    userId
+  ], (err, result) => {
+    if (err) {
+      console.error("Error updating expense:", err);
+      return res.status(500).json({ error: "Failed to update expense" });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Expense not found" });
+    }
+
+    res.json({ 
+      message: "Expense updated successfully",
+      expense: {
+        id: parseInt(expenseId),
+        itemName,
+        category,
+        quantity: parseFloat(quantity),
+        pricePerUnit: parseFloat(pricePerUnit),
+        totalAmount,
+        unit,
+        date: date || new Date().toISOString().split('T')[0]
+      }
+    });
+  });
+});
+
+// Delete an expense
+app.delete("/expenses/:id", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const expenseId = req.params.id;
+
+  const deleteQuery = "DELETE FROM expenses WHERE id = ? AND userId = ?";
+
+  db.query(deleteQuery, [expenseId, userId], (err, result) => {
+    if (err) {
+      console.error("Error deleting expense:", err);
+      return res.status(500).json({ error: "Failed to delete expense" });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Expense not found" });
+    }
+
+    res.json({ message: "Expense deleted successfully" });
+  });
+});
+
+// Get expense statistics
+app.get("/expenses/stats", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  
+  const statsQuery = `
+    SELECT 
+      COUNT(*) as totalExpenses,
+      SUM(totalAmount) as totalAmount,
+      AVG(totalAmount) as averageExpense,
+      category,
+      SUM(totalAmount) as categoryTotal,
+      COUNT(*) as categoryCount
+    FROM expenses 
+    WHERE userId = ?
+    GROUP BY category
+    ORDER BY categoryTotal DESC
+  `;
+
+  const overallQuery = `
+    SELECT 
+      COUNT(*) as totalExpenses,
+      SUM(totalAmount) as totalAmount,
+      AVG(totalAmount) as averageExpense
+    FROM expenses 
+    WHERE userId = ?
+  `;
+
+  // Get overall stats
+  db.query(overallQuery, [userId], (err, overallResults) => {
+    if (err) {
+      console.error("Error fetching overall expense stats:", err);
+      return res.status(500).json({ error: "Failed to fetch expense statistics" });
+    }
+
+    // Get category-wise stats
+    db.query(statsQuery, [userId], (err, categoryResults) => {
+      if (err) {
+        console.error("Error fetching category expense stats:", err);
+        return res.status(500).json({ error: "Failed to fetch expense statistics" });
+      }
+
+      const overall = overallResults[0] || {
+        totalExpenses: 0,
+        totalAmount: 0,
+        averageExpense: 0
+      };
+
+      res.json({
+        overall: {
+          totalExpenses: parseInt(overall.totalExpenses || 0),
+          totalAmount: parseFloat(overall.totalAmount || 0),
+          averageExpense: parseFloat(overall.averageExpense || 0)
+        },
+        byCategory: categoryResults.map(cat => ({
+          category: cat.category,
+          totalAmount: parseFloat(cat.categoryTotal || 0),
+          count: parseInt(cat.categoryCount || 0),
+          percentage: overall.totalAmount > 0 ? 
+            ((parseFloat(cat.categoryTotal || 0) / parseFloat(overall.totalAmount)) * 100) : 0
+        }))
+      });
+    });
+  });
+});
+
+// Get expenses by date range
+app.get("/expenses/range", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: "Start date and end date are required" });
+  }
+
+  const query = `
+    SELECT * FROM expenses 
+    WHERE userId = ? AND date BETWEEN ? AND ?
+    ORDER BY date DESC, createdAt DESC
+  `;
+
+  db.query(query, [userId, startDate, endDate], (err, results) => {
+    if (err) {
+      console.error("Error fetching expenses by date range:", err);
+      return res.status(500).json({ error: "Failed to fetch expenses" });
+    }
+
+    const totalAmount = results.reduce((sum, expense) => sum + parseFloat(expense.totalAmount || 0), 0);
+
+    res.json({
+      expenses: results,
+      summary: {
+        count: results.length,
+        totalAmount: totalAmount,
+        startDate,
+        endDate
+      }
+    });
+  });
+});
+
+// Get expenses by category
+app.get("/expenses/category/:category", authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { category } = req.params;
+
+  const query = `
+    SELECT * FROM expenses 
+    WHERE userId = ? AND category = ?
+    ORDER BY date DESC, createdAt DESC
+  `;
+
+  db.query(query, [userId, category], (err, results) => {
+    if (err) {
+      console.error("Error fetching expenses by category:", err);
+      return res.status(500).json({ error: "Failed to fetch expenses" });
+    }
+
+    const totalAmount = results.reduce((sum, expense) => sum + parseFloat(expense.totalAmount || 0), 0);
+
+    res.json({
+      expenses: results,
+      summary: {
+        category,
+        count: results.length,
+        totalAmount: totalAmount
+      }
+    });
+  });
+});
 // --- Loan & Repayment Management ---
 app.get("/loans", authenticateToken, (req, res) => {
   const userId = req.user.id;
