@@ -12,8 +12,7 @@ import About from './pages/About';
 import Borrow from './pages/Borrow';
 import Bread from './pages/Bread';
 import PaymentManagement from './pages/PaymentManagement';
-import axios from "axios";
-
+import axios from "./axiosConfig"; // ✅ use centralized config
 
 
 
