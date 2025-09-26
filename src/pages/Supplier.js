@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from "../config"; // adjust path if needed
+
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 export default function EnhancedSupplierManagement() {
@@ -83,8 +85,7 @@ export default function EnhancedSupplierManagement() {
         category: 1
     });
 
-    // API Base URL
-    const API_BASE = 'http://localhost:5000';
+
 
     // API helper function
     const apiCall = async (endpoint, options = {}) => {

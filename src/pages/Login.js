@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { API_URL } from '../config'; // adjust path if needed
+
 import { useNavigate } from 'react-router-dom';
 
 function Login() {
@@ -11,7 +13,7 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      await axios.post("http://localhost:5000/login", { email, password }, {
+  await axios.post(`${API_URL}/login`, { email, password }, {
         withCredentials: true // <-- Important
       });
       navigate("/dashboard");

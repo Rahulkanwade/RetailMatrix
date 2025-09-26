@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_URL } from '../config';
+
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { Container, Row, Col, Badge, Spinner, Alert } from 'react-bootstrap';
@@ -14,7 +16,7 @@ function Dashboard() {
 
   const handleLogout = async () => {
     try {
-      await axios.post("http://localhost:5000/logout", {}, { withCredentials: true });
+   await axios.post(`${API_URL}/logout`, {}, { withCredentials: true });
       navigate("/login");
     } catch (err) {
       console.error("Logout error:", err);
@@ -24,7 +26,7 @@ function Dashboard() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/profile", {
+      const res = await axios.get(`${API_URL}/profile`, {
           withCredentials: true
         });
         setUser(res.data);

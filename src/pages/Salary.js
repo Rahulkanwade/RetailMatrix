@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-
+import { API_URL } from "../config";
 export default function Salary() {
   const [salaries, setSalaries] = useState([]);
   const [labourNames, setLabourNames] = useState([]);
@@ -173,7 +173,7 @@ export default function Salary() {
   // Fetch Labourers
   const fetchLabourers = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:5000/labourers", {
+      const response = await fetch(`${API_URL}/labourers`, {
         credentials: 'include'
       });
       const data = await response.json();
@@ -228,14 +228,13 @@ export default function Salary() {
     };
 
     try {
-      const response = await fetch("http://localhost:5000/salaries", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(salaryEntry),
-      });
+      const response = await fetch(`${API_URL}/salaries`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify(salaryEntry),
+});
+
       const data = await response.json();
       setSalaries([...salaries, data]);
       setNewSalary({ labourName: "", salaryAmount: "" });
@@ -260,7 +259,7 @@ export default function Salary() {
     }
 
     try {
-      await fetch("http://localhost:5000/labourers", {
+      await fetch(`${API_URL}/labourers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
