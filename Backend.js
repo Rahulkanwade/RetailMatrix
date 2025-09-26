@@ -9,10 +9,15 @@ require("dotenv").config();
 
 const app = express();
 const allowedOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
-app.use(cors({
-  origin: allowedOrigin,
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000", 
+      "https://lively-basbousa-85aa35.netlify.app" // your frontend Netlify URL
+    ],
+    credentials: true,
+  })
+);
 app.use(cookieParser());
 app.use(express.json());
 
@@ -1549,5 +1554,7 @@ app.get("/bread/stats", authenticateToken, (req, res) => {
 });
 
 // --- Server Startup ---
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+const PORT = process.env.PORT || 5000;  // Railway gives you PORT automatically
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
