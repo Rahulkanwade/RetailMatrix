@@ -61,18 +61,20 @@ const CakeManagement = () => {
         navigate("/PaymentManagement"); // Navigate to the specified path
     };
     useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
-            try {
-                await Promise.all([fetchOrders(), fetchCustomers(), fetchPrices()]);
-            } catch (err) {
-                setError("Failed to load initial data. Please try again later.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
-    }, []);
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            await Promise.all([fetchOrders(), fetchCustomers(), fetchPrices()]);
+        } catch (err) {
+            setError("Failed to load initial data. Please try again later.");
+        } finally {
+            setLoading(false);
+        }
+    };
+    fetchData();
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
 
     const fetchOrders = async () => {
         try {
