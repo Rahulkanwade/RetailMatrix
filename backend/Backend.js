@@ -12,10 +12,20 @@ const allowedOrigins = [
   "http://localhost:3000", // for local testing
   "capacitor://localhost",  // for iOS/Android apps using Capacitor
   "http://localhost",       // Android WebView
+  "https://retailmatrix-production-e3e0.up.railway.app/"
 ]; 
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true); // For development, allow all origins temporarily
+    }
+  },
   credentials: true,
 }));
 
@@ -42,6 +52,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
 app.use('/signup', authLimiter);
 app.use('/login', authLimiter);
 
@@ -223,12 +234,12 @@ app.post("/login", async (req, res) => {
 
       // Set secure cookie
       res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // Only use secure in production
-        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        path: '/'
-      });
+  httpOnly: true,
+  secure: false,  // Changed for mobile
+  sameSite: 'none',
+  maxAge: 24 * 60 * 60 * 1000,
+  path: '/'
+});
 
       res.json({ 
         message: "Login successful",
@@ -246,12 +257,12 @@ app.post("/login", async (req, res) => {
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
-    path: '/'
-  });
+ res.clearCookie("token", {
+  httpOnly: true,
+  secure: false,
+  sameSite: 'none',
+  path: '/'
+});
   res.json({ message: "Logged out successfully" });
 });
 
