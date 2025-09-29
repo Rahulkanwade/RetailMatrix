@@ -8,16 +8,17 @@ const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
 const app = express();
-const allowedOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
-app.use(
-  cors({
-    origin: [
-      "http://localhost:3000", 
-      "https://lively-basbousa-85aa35.netlify.app" // your frontend Netlify URL
-    ],
-    credentials: true,
-  })
-);
+const allowedOrigins = [
+  "http://localhost:3000", // for local testing
+  "capacitor://localhost",  // for iOS/Android apps using Capacitor
+  "http://localhost",       // Android WebView
+]; 
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
+
 app.use(cookieParser());
 app.use(express.json());
 
