@@ -66,7 +66,8 @@ db.connect((err) => {
 
 // --- Authentication Middleware ---
 function authenticateToken(req, res, next) {
-  const token = req.cookies.token;
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ message: "Authentication required" });
@@ -75,7 +76,6 @@ function authenticateToken(req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Add token expiry check
     const now = Math.floor(Date.now() / 1000);
     if (decoded.exp <= now) {
       return res.status(401).json({ message: "Session expired, please login again" });
@@ -94,7 +94,6 @@ function authenticateToken(req, res, next) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
-
 // --- Main Routes (Login, Logout, Profile) ---
 app.get("/", (req, res) => {
   res.send("Backend is working ✅");
@@ -173,17 +172,14 @@ app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Input validation
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    // Validate email format
     if (!validator.isEmail(email)) {
       return res.status(400).json({ error: "Invalid email format" });
     }
 
-    // Normalize email
     const normalizedEmail = validator.normalizeEmail(email);
 
     const sql = "SELECT id, email, password, lastLoginAt FROM users WHERE email = ?";
@@ -193,56 +189,43 @@ app.post("/login", async (req, res) => {
         return res.status(500).json({ error: "Internal server error" });
       }
 
-      // Generic error message to prevent user enumeration
       if (results.length === 0) {
-        // Still hash password to prevent timing attacks
         await bcrypt.hash(password, 12);
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
       const user = results[0];
       
-      // Compare password
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
-      // Update last login timestamp
       const updateLoginSql = "UPDATE users SET lastLoginAt = NOW() WHERE id = ?";
       db.query(updateLoginSql, [user.id], (err) => {
         if (err) {
           console.error("Error updating last login:", err);
-          // Don't fail login for this
         }
       });
 
-      // Create JWT token with shorter expiry for better security
       const token = jwt.sign(
         { 
           id: user.id, 
           email: user.email,
-          iat: Math.floor(Date.now() / 1000) // issued at
+          iat: Math.floor(Date.now() / 1000)
         }, 
         process.env.JWT_SECRET, 
         { 
-          expiresIn: "24h", // Reduced from 1h to 24h for better UX, but could be shorter
+          expiresIn: "24h",
           issuer: 'your-app-name',
           audience: 'your-app-users'
         }
       );
 
-      // Set secure cookie
-      res.cookie("token", token, {
-  httpOnly: true,
-  secure: false,  // Changed for mobile
-  sameSite: 'none',
-  maxAge: 24 * 60 * 60 * 1000,
-  path: '/'
-});
-
+      // Return token in response instead of cookie
       res.json({ 
         message: "Login successful",
+        token: token,  // Add this line
         user: {
           id: user.id,
           email: user.email
