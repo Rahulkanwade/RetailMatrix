@@ -170,33 +170,46 @@ app.post("/signup", async (req, res) => {
 
 app.post("/login", async (req, res) => {
   try {
+    console.log("Login request body:", req.body);
+    
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
     const normalizedEmail = validator.normalizeEmail(email);
+    
+    // DB query
     const [rows] = await pool.query("SELECT id, email, password FROM users WHERE email = ?", [normalizedEmail]);
+    console.log("DB query result:", rows);
 
     if (rows.length === 0) {
+      console.log("User not found");
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
     const user = rows[0];
+    console.log("User record:", user);
+
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
+    console.log("Password match:", isMatch);
+
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is missing!");
+      return res.status(500).json({ error: "Internal server error" });
+    }
 
     const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "24h" });
+    console.log("JWT token generated");
 
     await pool.query("UPDATE users SET lastLoginAt = NOW() WHERE id = ?", [user.id]);
+    console.log("Updated lastLoginAt");
 
     res.json({ token, user: { id: user.id, email: user.email } });
   } catch (err) {
-    console.error("Login error:", err.message);
-    console.log("Received login request:", req.body);
-    console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ missing");
-
+    console.error("Login error caught:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 app.post("/logout", (req, res) => {
   res.clearCookie("token", {
