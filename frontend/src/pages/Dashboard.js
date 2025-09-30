@@ -16,7 +16,7 @@ function Dashboard() {
 
   const handleLogout = async () => {
     try {
-   await axios.post(`${API_URL}/logout`, {}, { withCredentials: true });
+      await axios.post(`${API_URL}/logout`, {}, { withCredentials: true });
       navigate("/login");
     } catch (err) {
       console.error("Logout error:", err);
@@ -26,10 +26,11 @@ function Dashboard() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-      const res = await axios.get(`${API_URL}/profile`, {
+        const res = await axios.get(`${API_URL}/profile`, {
           withCredentials: true
         });
-        setUser(res.data);
+        setUser(res.data.user);
+
         setLoading(false);
       } catch (err) {
         console.log("Auth error", err);
@@ -134,7 +135,7 @@ function Dashboard() {
   return (
     <div className="dashboard-wrapper">
       <Navbar user={user} handleLogout={handleLogout} />
-      
+
       <Container fluid className="dashboard-container">
         {/* Hero Section */}
         <div className="hero-section">
@@ -145,7 +146,7 @@ function Dashboard() {
               </h1>
               {user && (
                 <p className="hero-subtitle">
-                  Hello <Badge bg="primary" className="user-badge">{user.name || user.email}</Badge>, 
+                  Hello <Badge bg="primary" className="user-badge">{user.name || user.email}</Badge>,
                   ready to manage your business?
                 </p>
               )}
@@ -165,10 +166,10 @@ function Dashboard() {
               const IconComponent = item.icon;
               return (
                 <Col xs={12} sm={6} lg={4} xl={3} key={index}>
-                  <div 
+                  <div
                     className="dashboard-card"
                     onClick={() => navigate(item.path)}
-                    style={{ 
+                    style={{
                       background: item.gradient,
                       animationDelay: `${index * 0.1}s`
                     }}

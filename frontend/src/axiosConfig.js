@@ -1,10 +1,11 @@
-// src/axiosConfig.js
 import axios from "axios";
-import { API_BASE } from "./config";
 
-const instance = axios.create({
-  baseURL: API_BASE,
-  withCredentials: true,
+const axiosInstance = axios.create({
+  baseURL: process.env.REACT_APP_API_BASE, // ✅ use environment variable
+  withCredentials: true,                   // include cookies if needed
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-export default instance;
+export default axiosInstance;

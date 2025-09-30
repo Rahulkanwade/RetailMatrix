@@ -1,4 +1,7 @@
-// src/config.js
-export const API_URL = process.env.REACT_APP_API_BASE || "http://localhost:5000";
-// src/config.js
-export const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:5000";
+import { Capacitor } from '@capacitor/core';
+
+export const API_URL = Capacitor.isNativePlatform() 
+  ? 'https://your-railway-url.up.railway.app'
+  : 'http://localhost:5000';
+
+export const API_BASE = API_URL; // If you need this alias
