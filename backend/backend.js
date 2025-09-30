@@ -1,10 +1,10 @@
 const express = require("express");
-const mysql = require("mysql2");
+// const mysql = require("mysql2"); // REMOVED: Redundant import, using mysql2/promise instead
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-
+const mysql = require('mysql2/promise'); // Using promise-based client
 require("dotenv").config();
 
 const app = express();
@@ -33,16 +33,15 @@ app.use(cookieParser());
 app.use(express.json());
 
 // --- Database Connection ---
-const db = mysql.createConnection({
+const pool = mysql.createPool({
   host: process.env.MYSQLHOST,
   user: process.env.MYSQLUSER,
   password: process.env.MYSQLPASSWORD,
   database: process.env.MYSQLDATABASE,
   port: process.env.MYSQLPORT,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: { rejectUnauthorized: false }
 });
+
 const validator = require('validator');
 const rateLimit = require('express-rate-limit');
 const authLimiter = rateLimit({
@@ -56,13 +55,19 @@ const authLimiter = rateLimit({
 app.use('/signup', authLimiter);
 app.use('/login', authLimiter);
 
-db.connect((err) => {
-  if (err) {
-    console.error("Database connection failed:", err);
-  } else {
+// Check database connection
+async function checkDbConnection() {
+  try {
+    // Use pool.getConnection to verify connection
+    const connection = await pool.getConnection();
     console.log("✅ Connected to Railway MySQL");
+    connection.release();
+  } catch (err) {
+    console.error("Database connection failed:", err);
   }
-});
+}
+checkDbConnection();
+// Original db.connect... block has been replaced/removed as it was incorrect for a pool
 
 // --- Authentication Middleware ---
 function authenticateToken(req, res, next) {
@@ -131,36 +136,31 @@ app.post("/signup", async (req, res) => {
 
     // Check if user already exists
     const checkUserSql = "SELECT id FROM users WHERE email = ?";
-    db.query(checkUserSql, [normalizedEmail], async (err, results) => {
-      if (err) {
-        console.error("Database error during user check:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
+    const [results] = await pool.query(checkUserSql, [normalizedEmail]); // REPLACED db.query with await pool.query
 
-      if (results.length > 0) {
+    if (results.length > 0) {
+      return res.status(409).json({ error: "User already exists with this email" });
+    }
+
+    // Hash password with higher salt rounds for better security
+    const hashedPassword = await bcrypt.hash(password, 12);
+    
+    const insertSql = "INSERT INTO users (email, password, createdAt) VALUES (?, ?, NOW())";
+    try {
+      const [result] = await pool.query(insertSql, [normalizedEmail, hashedPassword]); // REPLACED db.query with await pool.query
+      res.status(201).json({ 
+        message: "Account created successfully",
+        userId: result.insertId 
+      });
+    } catch (err) {
+      console.error("Database error during user creation:", err);
+      // Check for duplicate entry error specifically
+      if (err.code === 'ER_DUP_ENTRY') {
         return res.status(409).json({ error: "User already exists with this email" });
       }
+      return res.status(500).json({ error: "Failed to create user account" });
+    }
 
-      // Hash password with higher salt rounds for better security
-      const hashedPassword = await bcrypt.hash(password, 12);
-      
-      const insertSql = "INSERT INTO users (email, password, createdAt) VALUES (?, ?, NOW())";
-      db.query(insertSql, [normalizedEmail, hashedPassword], (err, result) => {
-        if (err) {
-          console.error("Database error during user creation:", err);
-          // Check for duplicate entry error specifically
-          if (err.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ error: "User already exists with this email" });
-          }
-          return res.status(500).json({ error: "Failed to create user account" });
-        }
-
-        res.status(201).json({ 
-          message: "Account created successfully",
-          userId: result.insertId 
-        });
-      });
-    });
 
   } catch (error) {
     console.error("Signup error:", error);
@@ -171,70 +171,26 @@ app.post("/signup", async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
-
-    if (!validator.isEmail(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
+    if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
     const normalizedEmail = validator.normalizeEmail(email);
+    const [rows] = await pool.query("SELECT id, email, password FROM users WHERE email = ?", [normalizedEmail]);
 
-    const sql = "SELECT id, email, password, lastLoginAt FROM users WHERE email = ?";
-    db.query(sql, [normalizedEmail], async (err, results) => {
-      if (err) {
-        console.error("Database error during login:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
+    if (rows.length === 0) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
 
-      if (results.length === 0) {
-        await bcrypt.hash(password, 12);
-        return res.status(401).json({ error: "Invalid email or password" });
-      }
+    const user = rows[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
 
-      const user = results[0];
-      
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({ error: "Invalid email or password" });
-      }
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "24h" });
 
-      const updateLoginSql = "UPDATE users SET lastLoginAt = NOW() WHERE id = ?";
-      db.query(updateLoginSql, [user.id], (err) => {
-        if (err) {
-          console.error("Error updating last login:", err);
-        }
-      });
+    await pool.query("UPDATE users SET lastLoginAt = NOW() WHERE id = ?", [user.id]);
 
-      const token = jwt.sign(
-        { 
-          id: user.id, 
-          email: user.email,
-          iat: Math.floor(Date.now() / 1000)
-        }, 
-        process.env.JWT_SECRET, 
-        { 
-          expiresIn: "24h",
-          issuer: 'your-app-name',
-          audience: 'your-app-users'
-        }
-      );
-
-      // Return token in response instead of cookie
-      res.json({ 
-        message: "Login successful",
-        token: token,  // Add this line
-        user: {
-          id: user.id,
-          email: user.email
-        }
-      });
-    });
-
-  } catch (error) {
-    console.error("Login error:", error);
+    res.json({ token, user: { id: user.id, email: user.email } });
+  } catch (err) {
+    console.error("Login error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -249,7 +205,7 @@ app.post("/logout", (req, res) => {
   res.json({ message: "Logged out successfully" });
 });
 
-app.get("/profile", (req, res) => {
+app.get("/profile", async (req, res) => { // Made async
   const token = req.cookies.token;
   
   if (!token) {
@@ -261,25 +217,20 @@ app.get("/profile", (req, res) => {
     
     // Fetch fresh user data from database
     const sql = "SELECT id, email, createdAt, lastLoginAt FROM users WHERE id = ?";
-    db.query(sql, [decoded.id], (err, results) => {
-      if (err) {
-        console.error("Database error fetching profile:", err);
-        return res.status(500).json({ message: "Internal server error" });
-      }
+    const [results] = await pool.query(sql, [decoded.id]); // REPLACED db.query with await pool.query
 
-      if (results.length === 0) {
-        return res.status(404).json({ message: "User not found" });
-      }
+    if (results.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-      const user = results[0];
-      res.json({ 
-        user: {
-          id: user.id,
-          email: user.email,
-          createdAt: user.createdAt,
-          lastLoginAt: user.lastLoginAt
-        }
-      });
+    const user = results[0];
+    res.json({ 
+      user: {
+        id: user.id,
+        email: user.email,
+        createdAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt
+      }
     });
 
   } catch (err) {
@@ -295,27 +246,31 @@ app.get("/profile", (req, res) => {
 });
 
 // --- Customer & Order Management ---
-app.get("/customers", authenticateToken, (req, res) => {
+app.get("/customers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT * FROM customers WHERE userId = ?", [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Failed to fetch customers" });
+  try {
+    const [results] = await pool.query("SELECT * FROM customers WHERE userId = ?", [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch customers" });
+  }
 });
 
-app.post("/customers", authenticateToken, (req, res) => {
+app.post("/customers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { name } = req.body;
-  db.query("INSERT INTO customers (name, userId) VALUES (?, ?)", [name, userId], (err, result) => {
-    if (err) return res.status(500).json({ error: "Failed to add customer" });
+  try {
+    const [result] = await pool.query("INSERT INTO customers (name, userId) VALUES (?, ?)", [name, userId]); // REPLACED db.query with await pool.query
     res.json({ id: result.insertId, name });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add customer" });
+  }
 });
 
-app.get("/orders", authenticateToken, (req, res) => {
+app.get("/orders", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT * FROM orders WHERE userId = ? ORDER BY orderDate DESC", [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Failed to fetch orders" });
+  try {
+    const [results] = await pool.query("SELECT * FROM orders WHERE userId = ? ORDER BY orderDate DESC", [userId]); // REPLACED db.query with await pool.query
     const parsed = results.map((order) => ({
       ...order,
       customerId: order.customerId || null,
@@ -323,48 +278,56 @@ app.get("/orders", authenticateToken, (req, res) => {
       pastries: JSON.parse(order.pastries)
     }));
     res.json(parsed);
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch orders" });
+  }
 });
 
-app.post("/orders", authenticateToken, (req, res) => {
+app.post("/orders", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { customer, orderDate, deliveryDate, cakes, pastries } = req.body;
   const query = `
     INSERT INTO orders (customer, orderDate, deliveryDate, cakes, pastries, userId)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
-  db.query(query, [
-    customer,
-    orderDate,
-    deliveryDate,
-    JSON.stringify(cakes),
-    JSON.stringify(pastries),
-    userId
-  ], (err, result) => {
-    if (err) return res.status(500).json({ error: "Failed to add order" });
+  try {
+    const [result] = await pool.query(query, [ // REPLACED db.query with await pool.query
+      customer,
+      orderDate,
+      deliveryDate,
+      JSON.stringify(cakes),
+      JSON.stringify(pastries),
+      userId
+    ]);
     res.json({ id: result.insertId });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add order" });
+  }
 });
 
-app.put("/orders/:id", (req, res) => {
+app.put("/orders/:id", async (req, res) => { // Made async
   const { deliveryDate } = req.body;
   const { id } = req.params;
-  db.query("UPDATE orders SET deliveryDate = ? WHERE id = ?", [deliveryDate, id], (err) => {
-    if (err) return res.status(500).json({ error: "Failed to update delivery date" });
+  try {
+    await pool.query("UPDATE orders SET deliveryDate = ? WHERE id = ?", [deliveryDate, id]); // REPLACED db.query with await pool.query
     res.json({ message: "Updated" });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to update delivery date" });
+  }
 });
 
-app.delete("/orders/:id", (req, res) => {
+app.delete("/orders/:id", async (req, res) => { // Made async
   const { id } = req.params;
-  db.query("DELETE FROM orders WHERE id = ?", [id], (err) => {
-    if (err) return res.status(500).json({ error: "Failed to delete order" });
+  try {
+    await pool.query("DELETE FROM orders WHERE id = ?", [id]); // REPLACED db.query with await pool.query
     res.json({ message: "Deleted" });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to delete order" });
+  }
 });
 
 // --- General Payments Management ---
-app.post("/payments/customer", authenticateToken, (req, res) => {
+app.post("/payments/customer", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType } = req.body;
   if (!customerId || !customerName || !amount) {
@@ -374,8 +337,8 @@ app.post("/payments/customer", authenticateToken, (req, res) => {
     INSERT INTO payments (customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType, userId)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
-  db.query(query, [customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType, userId], (err, result) => {
-    if (err) return res.status(500).json({ error: "Failed to add customer payment" });
+  try {
+    const [result] = await pool.query(query, [customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType, userId]); // REPLACED db.query with await pool.query
     res.json({
       id: result.insertId,
       customerId,
@@ -386,18 +349,22 @@ app.post("/payments/customer", authenticateToken, (req, res) => {
       notes,
       paymentType
     });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add customer payment" });
+  }
 });
 
-app.get("/payments", authenticateToken, (req, res) => {
+app.get("/payments", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT * FROM payments WHERE userId = ? ORDER BY paymentDate DESC", [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Failed to fetch payments" });
+  try {
+    const [results] = await pool.query("SELECT * FROM payments WHERE userId = ? ORDER BY paymentDate DESC", [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch payments" });
+  }
 });
 
-app.post("/payments", authenticateToken, (req, res) => {
+app.post("/payments", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { orderId, customerId, customerName, amount, paymentMethod, paymentDate, notes } = req.body;
   if (!orderId || !customerId || !amount) {
@@ -407,75 +374,88 @@ app.post("/payments", authenticateToken, (req, res) => {
     INSERT INTO payments (orderId, customerId, customerName, amount, paymentMethod, paymentDate, notes, paymentType, userId)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'order', ?)
   `;
-  db.query(query, [orderId, customerId, customerName, amount, paymentMethod, paymentDate, notes, userId], (err, result) => {
-    if (err) return res.status(500).json({ error: "Failed to add payment" });
+  try {
+    const [result] = await pool.query(query, [orderId, customerId, customerName, amount, paymentMethod, paymentDate, notes, userId]); // REPLACED db.query with await pool.query
     res.json({ id: result.insertId, orderId, customerId, customerName, amount, paymentMethod, paymentDate, notes });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to add payment" });
+  }
 });
 
-app.delete("/payments/:id", authenticateToken, (req, res) => {
+app.delete("/payments/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { id } = req.params;
-  db.query("DELETE FROM payments WHERE id = ? AND userId = ?", [id, userId], (err, result) => {
-    if (err) return res.status(500).json({ error: "Failed to delete payment" });
+  try {
+    const [result] = await pool.query("DELETE FROM payments WHERE id = ? AND userId = ?", [id, userId]); // REPLACED db.query with await pool.query
     if (result.affectedRows === 0) return res.status(404).json({ error: "Payment not found" });
     res.json({ message: "Payment deleted" });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to delete payment" });
+  }
 });
 
 // --- Labourer & Salary Management ---
-app.get("/labourers", authenticateToken, (req, res) => {
+app.get("/labourers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT * FROM labourers WHERE userId = ?", [userId], (err, results) => {
-    if (err) return res.status(500).json({ message: "Error fetching labourers" });
+  try {
+    const [results] = await pool.query("SELECT * FROM labourers WHERE userId = ?", [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    return res.status(500).json({ message: "Error fetching labourers" });
+  }
 });
 
-app.post("/labourers", authenticateToken, (req, res) => {
+app.post("/labourers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { name } = req.body;
   if (!name) return res.status(400).json({ message: "Name required" });
-  db.query("INSERT INTO labourers (name, userId) VALUES (?, ?)", [name, userId], (err, result) => {
-    if (err) return res.status(500).json({ message: "Error adding labourer" });
+  try {
+    const [result] = await pool.query("INSERT INTO labourers (name, userId) VALUES (?, ?)", [name, userId]); // REPLACED db.query with await pool.query
     res.json({ id: result.insertId, name });
-  });
+  } catch (err) {
+    return res.status(500).json({ message: "Error adding labourer" });
+  }
 });
 
-app.get("/salaries", authenticateToken, (req, res) => {
+app.get("/salaries", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT * FROM salaries WHERE userId = ?", [userId], (err, results) => {
-    if (err) return res.status(500).json({ message: "Error fetching salaries" });
+  try {
+    const [results] = await pool.query("SELECT * FROM salaries WHERE userId = ?", [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    return res.status(500).json({ message: "Error fetching salaries" });
+  }
 });
 
-app.post("/salaries", authenticateToken, (req, res) => {
+app.post("/salaries", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { labourName, salaryAmount, day, date, time } = req.body;
   if (!labourName || !salaryAmount || !day || !date || !time) {
     return res.status(400).json({ message: "All fields required" });
   }
-  db.query(
-    "INSERT INTO salaries (labourName, salaryAmount, day, date, time, userId) VALUES (?, ?, ?, ?, ?, ?)",
-    [labourName, salaryAmount, day, date, time, userId],
-    (err, result) => {
-      if (err) return res.status(500).json({ message: "Error adding salary" });
-      res.json({ id: result.insertId, labourName, salaryAmount, day, date, time });
-    }
-  );
+  try {
+    const [result] = await pool.query( // REPLACED db.query with await pool.query
+      "INSERT INTO salaries (labourName, salaryAmount, day, date, time, userId) VALUES (?, ?, ?, ?, ?, ?)",
+      [labourName, salaryAmount, day, date, time, userId]
+    );
+    res.json({ id: result.insertId, labourName, salaryAmount, day, date, time });
+  } catch (err) {
+    return res.status(500).json({ message: "Error adding salary" });
+  }
 });
 
 // --- Price Management ---
-app.get("/prices", authenticateToken, (req, res) => {
+app.get("/prices", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT * FROM prices WHERE userId = ?", [userId], (err, results) => {
-    if (err) return res.status(500).json({ error: "Failed to fetch prices" });
+  try {
+    const [results] = await pool.query("SELECT * FROM prices WHERE userId = ?", [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch prices" });
+  }
 });
 
-app.put("/prices", authenticateToken, (req, res) => {
+app.put("/prices", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { type, weight, price } = req.body;
   const query = `
@@ -483,21 +463,18 @@ app.put("/prices", authenticateToken, (req, res) => {
     VALUES (?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE price = VALUES(price)
   `;
-  db.query(query, [type, weight, price, userId], (err) => {
-    if (err) return res.status(500).json({ error: "Failed to update price" });
+  try {
+    await pool.query(query, [type, weight, price, userId]); // REPLACED db.query with await pool.query
     res.json({ message: "Price updated" });
-  });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to update price" });
+  }
 });
 
 // --- Expense Management ---
 
-// Add these expense management endpoints to your existing backend code
-// Place these after your existing routes, before the "Server Startup" section
-
-// --- Expense Management ---
-
 // Get all expenses for the authenticated user
-app.get("/expenses", authenticateToken, (req, res) => {
+app.get("/expenses", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT * FROM expenses 
@@ -505,17 +482,17 @@ app.get("/expenses", authenticateToken, (req, res) => {
     ORDER BY date DESC, createdAt DESC
   `;
   
-  db.query(query, [userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching expenses:", err);
-      return res.status(500).json({ error: "Failed to fetch expenses" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching expenses:", err);
+    return res.status(500).json({ error: "Failed to fetch expenses" });
+  }
 });
 
 // Add new expenses (can handle multiple expenses at once)
-app.post("/expenses", authenticateToken, (req, res) => {
+app.post("/expenses", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { expenses } = req.body;
 
@@ -558,11 +535,8 @@ app.post("/expenses", authenticateToken, (req, res) => {
     userId
   ]);
 
-  db.query(insertQuery, [expenseValues], (err, result) => {
-    if (err) {
-      console.error("Error adding expenses:", err);
-      return res.status(500).json({ error: "Failed to add expenses" });
-    }
+  try {
+    const [result] = await pool.query(insertQuery, [expenseValues]); // REPLACED db.query with await pool.query
 
     // Return the added expenses with generated IDs
     const addedExpenses = expenses.map((expense, index) => ({
@@ -579,11 +553,14 @@ app.post("/expenses", authenticateToken, (req, res) => {
       message: "Expenses added successfully",
       expenses: addedExpenses
     });
-  });
+  } catch (err) {
+    console.error("Error adding expenses:", err);
+    return res.status(500).json({ error: "Failed to add expenses" });
+  }
 });
 
 // Update an expense
-app.put("/expenses/:id", authenticateToken, (req, res) => {
+app.put("/expenses/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const expenseId = req.params.id;
   const { itemName, category, quantity, pricePerUnit, unit, date } = req.body;
@@ -606,21 +583,18 @@ app.put("/expenses/:id", authenticateToken, (req, res) => {
     WHERE id = ? AND userId = ?
   `;
 
-  db.query(updateQuery, [
-    itemName,
-    category,
-    parseFloat(quantity),
-    parseFloat(pricePerUnit),
-    totalAmount,
-    unit,
-    date || new Date().toISOString().split('T')[0],
-    expenseId,
-    userId
-  ], (err, result) => {
-    if (err) {
-      console.error("Error updating expense:", err);
-      return res.status(500).json({ error: "Failed to update expense" });
-    }
+  try {
+    const [result] = await pool.query(updateQuery, [ // REPLACED db.query with await pool.query
+      itemName,
+      category,
+      parseFloat(quantity),
+      parseFloat(pricePerUnit),
+      totalAmount,
+      unit,
+      date || new Date().toISOString().split('T')[0],
+      expenseId,
+      userId
+    ]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Expense not found" });
@@ -639,32 +613,35 @@ app.put("/expenses/:id", authenticateToken, (req, res) => {
         date: date || new Date().toISOString().split('T')[0]
       }
     });
-  });
+  } catch (err) {
+    console.error("Error updating expense:", err);
+    return res.status(500).json({ error: "Failed to update expense" });
+  }
 });
 
 // Delete an expense
-app.delete("/expenses/:id", authenticateToken, (req, res) => {
+app.delete("/expenses/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const expenseId = req.params.id;
 
   const deleteQuery = "DELETE FROM expenses WHERE id = ? AND userId = ?";
 
-  db.query(deleteQuery, [expenseId, userId], (err, result) => {
-    if (err) {
-      console.error("Error deleting expense:", err);
-      return res.status(500).json({ error: "Failed to delete expense" });
-    }
+  try {
+    const [result] = await pool.query(deleteQuery, [expenseId, userId]); // REPLACED db.query with await pool.query
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Expense not found" });
     }
 
     res.json({ message: "Expense deleted successfully" });
-  });
+  } catch (err) {
+    console.error("Error deleting expense:", err);
+    return res.status(500).json({ error: "Failed to delete expense" });
+  }
 });
 
 // Get expense statistics
-app.get("/expenses/stats", authenticateToken, (req, res) => {
+app.get("/expenses/stats", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   
   const statsQuery = `
@@ -690,46 +667,41 @@ app.get("/expenses/stats", authenticateToken, (req, res) => {
     WHERE userId = ?
   `;
 
-  // Get overall stats
-  db.query(overallQuery, [userId], (err, overallResults) => {
-    if (err) {
-      console.error("Error fetching overall expense stats:", err);
-      return res.status(500).json({ error: "Failed to fetch expense statistics" });
-    }
+  try {
+    // Get overall stats
+    const [overallResults] = await pool.query(overallQuery, [userId]); // REPLACED db.query with await pool.query
 
     // Get category-wise stats
-    db.query(statsQuery, [userId], (err, categoryResults) => {
-      if (err) {
-        console.error("Error fetching category expense stats:", err);
-        return res.status(500).json({ error: "Failed to fetch expense statistics" });
-      }
+    const [categoryResults] = await pool.query(statsQuery, [userId]); // REPLACED db.query with await pool.query
 
-      const overall = overallResults[0] || {
-        totalExpenses: 0,
-        totalAmount: 0,
-        averageExpense: 0
-      };
+    const overall = overallResults[0] || {
+      totalExpenses: 0,
+      totalAmount: 0,
+      averageExpense: 0
+    };
 
-      res.json({
-        overall: {
-          totalExpenses: parseInt(overall.totalExpenses || 0),
-          totalAmount: parseFloat(overall.totalAmount || 0),
-          averageExpense: parseFloat(overall.averageExpense || 0)
-        },
-        byCategory: categoryResults.map(cat => ({
-          category: cat.category,
-          totalAmount: parseFloat(cat.categoryTotal || 0),
-          count: parseInt(cat.categoryCount || 0),
-          percentage: overall.totalAmount > 0 ? 
-            ((parseFloat(cat.categoryTotal || 0) / parseFloat(overall.totalAmount)) * 100) : 0
-        }))
-      });
+    res.json({
+      overall: {
+        totalExpenses: parseInt(overall.totalExpenses || 0),
+        totalAmount: parseFloat(overall.totalAmount || 0),
+        averageExpense: parseFloat(overall.averageExpense || 0)
+      },
+      byCategory: categoryResults.map(cat => ({
+        category: cat.category,
+        totalAmount: parseFloat(cat.categoryTotal || 0),
+        count: parseInt(cat.categoryCount || 0),
+        percentage: overall.totalAmount > 0 ? 
+          ((parseFloat(cat.categoryTotal || 0) / parseFloat(overall.totalAmount)) * 100) : 0
+      }))
     });
-  });
+  } catch (err) {
+    console.error("Error fetching expense stats:", err);
+    return res.status(500).json({ error: "Failed to fetch expense statistics" });
+  }
 });
 
 // Get expenses by date range
-app.get("/expenses/range", authenticateToken, (req, res) => {
+app.get("/expenses/range", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { startDate, endDate } = req.query;
 
@@ -743,11 +715,8 @@ app.get("/expenses/range", authenticateToken, (req, res) => {
     ORDER BY date DESC, createdAt DESC
   `;
 
-  db.query(query, [userId, startDate, endDate], (err, results) => {
-    if (err) {
-      console.error("Error fetching expenses by date range:", err);
-      return res.status(500).json({ error: "Failed to fetch expenses" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId, startDate, endDate]); // REPLACED db.query with await pool.query
 
     const totalAmount = results.reduce((sum, expense) => sum + parseFloat(expense.totalAmount || 0), 0);
 
@@ -760,11 +729,14 @@ app.get("/expenses/range", authenticateToken, (req, res) => {
         endDate
       }
     });
-  });
+  } catch (err) {
+    console.error("Error fetching expenses by date range:", err);
+    return res.status(500).json({ error: "Failed to fetch expenses" });
+  }
 });
 
 // Get expenses by category
-app.get("/expenses/category/:category", authenticateToken, (req, res) => {
+app.get("/expenses/category/:category", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { category } = req.params;
 
@@ -774,11 +746,8 @@ app.get("/expenses/category/:category", authenticateToken, (req, res) => {
     ORDER BY date DESC, createdAt DESC
   `;
 
-  db.query(query, [userId, category], (err, results) => {
-    if (err) {
-      console.error("Error fetching expenses by category:", err);
-      return res.status(500).json({ error: "Failed to fetch expenses" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId, category]); // REPLACED db.query with await pool.query
 
     const totalAmount = results.reduce((sum, expense) => sum + parseFloat(expense.totalAmount || 0), 0);
 
@@ -790,10 +759,13 @@ app.get("/expenses/category/:category", authenticateToken, (req, res) => {
         totalAmount: totalAmount
       }
     });
-  });
+  } catch (err) {
+    console.error("Error fetching expenses by category:", err);
+    return res.status(500).json({ error: "Failed to fetch expenses" });
+  }
 });
 // --- Loan & Repayment Management ---
-app.get("/loans", authenticateToken, (req, res) => {
+app.get("/loans", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT l.*,
@@ -805,16 +777,16 @@ app.get("/loans", authenticateToken, (req, res) => {
     GROUP BY l.id
     ORDER BY pendingAmount DESC, l.dateAdded DESC
   `;
-  db.query(query, [userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching loans:", err);
-      return res.status(500).json({ message: "Error fetching loans" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching loans:", err);
+    return res.status(500).json({ message: "Error fetching loans" });
+  }
 });
 
-app.post("/loans", authenticateToken, (req, res) => {
+app.post("/loans", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { borrower, loanAmount } = req.body;
   if (!borrower || !borrower.trim()) {
@@ -824,11 +796,8 @@ app.post("/loans", authenticateToken, (req, res) => {
     return res.status(400).json({ message: "Valid loan amount is required" });
   }
   const query = "INSERT INTO loans (borrower, loanAmount, userId) VALUES (?, ?, ?)";
-  db.query(query, [borrower.trim(), parseFloat(loanAmount), userId], (err, result) => {
-    if (err) {
-      console.error("Error adding loan:", err);
-      return res.status(500).json({ message: "Error adding loan" });
-    }
+  try {
+    const [result] = await pool.query(query, [borrower.trim(), parseFloat(loanAmount), userId]); // REPLACED db.query with await pool.query
     res.json({
       id: result.insertId,
       borrower: borrower.trim(),
@@ -837,31 +806,29 @@ app.post("/loans", authenticateToken, (req, res) => {
       totalRepaid: 0,
       pendingAmount: parseFloat(loanAmount)
     });
-  });
+  } catch (err) {
+    console.error("Error adding loan:", err);
+    return res.status(500).json({ message: "Error adding loan" });
+  }
 });
 
-app.delete("/loans/:id", authenticateToken, (req, res) => {
+app.delete("/loans/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const loanId = req.params.id;
-  db.query("DELETE FROM repayments WHERE loanId = ? AND userId = ?", [loanId, userId], (err) => {
-    if (err) {
-      console.error("Error deleting repayments:", err);
-      return res.status(500).json({ message: "Error deleting loan repayments" });
+  try {
+    await pool.query("DELETE FROM repayments WHERE loanId = ? AND userId = ?", [loanId, userId]); // REPLACED db.query with await pool.query
+    const [result] = await pool.query("DELETE FROM loans WHERE id = ? AND userId = ?", [loanId, userId]); // REPLACED db.query with await pool.query
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Loan not found" });
     }
-    db.query("DELETE FROM loans WHERE id = ? AND userId = ?", [loanId, userId], (err, result) => {
-      if (err) {
-        console.error("Error deleting loan:", err);
-        return res.status(500).json({ message: "Error deleting loan" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Loan not found" });
-      }
-      res.json({ message: "Loan deleted successfully" });
-    });
-  });
+    res.json({ message: "Loan deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting loan or repayments:", err);
+    return res.status(500).json({ message: "Error deleting loan or loan repayments" });
+  }
 });
 
-app.get("/loans/:id/repayments", authenticateToken, (req, res) => {
+app.get("/loans/:id/repayments", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const loanId = req.params.id;
   const query = `
@@ -870,47 +837,42 @@ app.get("/loans/:id/repayments", authenticateToken, (req, res) => {
     WHERE r.loanId = ? AND r.userId = ? AND l.userId = ?
     ORDER BY r.date DESC
   `;
-  db.query(query, [loanId, userId, userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching repayments:", err);
-      return res.status(500).json({ message: "Error fetching repayments" });
-    }
+  try {
+    const [results] = await pool.query(query, [loanId, userId, userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching repayments:", err);
+    return res.status(500).json({ message: "Error fetching repayments" });
+  }
 });
 
-app.post("/loans/:id/repayments", authenticateToken, (req, res) => {
+app.post("/loans/:id/repayments", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const loanId = req.params.id;
   const { amount } = req.body;
   if (!amount || parseFloat(amount) <= 0) {
     return res.status(400).json({ message: "Valid repayment amount is required" });
   }
-  db.query("SELECT * FROM loans WHERE id = ? AND userId = ?", [loanId, userId], (err, loanResults) => {
-    if (err) {
-      console.error("Error verifying loan:", err);
-      return res.status(500).json({ message: "Error verifying loan" });
-    }
+  try {
+    const [loanResults] = await pool.query("SELECT * FROM loans WHERE id = ? AND userId = ?", [loanId, userId]); // REPLACED db.query with await pool.query
     if (loanResults.length === 0) {
       return res.status(404).json({ message: "Loan not found" });
     }
     const query = "INSERT INTO repayments (loanId, amount, userId) VALUES (?, ?, ?)";
-    db.query(query, [loanId, parseFloat(amount), userId], (err, result) => {
-      if (err) {
-        console.error("Error adding repayment:", err);
-        return res.status(500).json({ message: "Error adding repayment" });
-      }
-      res.json({
-        id: result.insertId,
-        loanId: parseInt(loanId),
-        amount: parseFloat(amount),
-        date: new Date().toISOString()
-      });
+    const [result] = await pool.query(query, [loanId, parseFloat(amount), userId]); // REPLACED db.query with await pool.query
+    res.json({
+      id: result.insertId,
+      loanId: parseInt(loanId),
+      amount: parseFloat(amount),
+      date: new Date().toISOString()
     });
-  });
+  } catch (err) {
+    console.error("Error adding repayment:", err);
+    return res.status(500).json({ message: "Error adding repayment" });
+  }
 });
 
-app.delete("/repayments/:id", authenticateToken, (req, res) => {
+app.delete("/repayments/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const repaymentId = req.params.id;
   const query = `
@@ -918,19 +880,19 @@ app.delete("/repayments/:id", authenticateToken, (req, res) => {
     JOIN loans l ON r.loanId = l.id
     WHERE r.id = ? AND r.userId = ? AND l.userId = ?
   `;
-  db.query(query, [repaymentId, userId, userId], (err, result) => {
-    if (err) {
-      console.error("Error deleting repayment:", err);
-      return res.status(500).json({ message: "Error deleting repayment" });
-    }
+  try {
+    const [result] = await pool.query(query, [repaymentId, userId, userId]); // REPLACED db.query with await pool.query
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Repayment not found" });
     }
     res.json({ message: "Repayment deleted successfully" });
-  });
+  } catch (err) {
+    console.error("Error deleting repayment:", err);
+    return res.status(500).json({ message: "Error deleting repayment" });
+  }
 });
 
-app.get("/loans/stats", authenticateToken, (req, res) => {
+app.get("/loans/stats", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT
@@ -947,11 +909,8 @@ app.get("/loans/stats", authenticateToken, (req, res) => {
     ) r ON l.id = r.loanId
     WHERE l.userId = ?
   `;
-  db.query(query, [userId, userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching loan stats:", err);
-      return res.status(500).json({ message: "Error fetching loan statistics" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId, userId]); // REPLACED db.query with await pool.query
     const stats = results[0] || {
       totalLoaned: 0,
       totalRepaid: 0,
@@ -959,11 +918,14 @@ app.get("/loans/stats", authenticateToken, (req, res) => {
       totalLoans: 0
     };
     res.json(stats);
-  });
+  } catch (err) {
+    console.error("Error fetching loan stats:", err);
+    return res.status(500).json({ message: "Error fetching loan statistics" });
+  }
 });
 
 // --- Supplier & Inventory Management ---
-app.get("/suppliers", authenticateToken, (req, res) => {
+app.get("/suppliers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT s.*,
@@ -975,41 +937,36 @@ app.get("/suppliers", authenticateToken, (req, res) => {
     GROUP BY s.id
     ORDER BY s.dateAdded DESC
   `;
-  db.query(query, [userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching suppliers:", err);
-      return res.status(500).json({ message: "Error fetching suppliers" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching suppliers:", err);
+    return res.status(500).json({ message: "Error fetching suppliers" });
+  }
 });
 
-app.get("/suppliers/:id", authenticateToken, (req, res) => {
+app.get("/suppliers/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const supplierId = req.params.id;
   const supplierQuery = "SELECT * FROM suppliers WHERE id = ? AND userId = ?";
   const productsQuery = "SELECT * FROM supplier_products WHERE supplierId = ? AND userId = ?";
-  db.query(supplierQuery, [supplierId, userId], (err, supplierResults) => {
-    if (err) {
-      console.error("Error fetching supplier:", err);
-      return res.status(500).json({ message: "Error fetching supplier" });
-    }
+  try {
+    const [supplierResults] = await pool.query(supplierQuery, [supplierId, userId]); // REPLACED db.query with await pool.query
     if (supplierResults.length === 0) {
       return res.status(404).json({ message: "Supplier not found" });
     }
-    db.query(productsQuery, [supplierId, userId], (err, productsResults) => {
-      if (err) {
-        console.error("Error fetching supplier products:", err);
-        return res.status(500).json({ message: "Error fetching supplier products" });
-      }
-      const supplier = supplierResults[0];
-      supplier.products = productsResults;
-      res.json(supplier);
-    });
-  });
+    const [productsResults] = await pool.query(productsQuery, [supplierId, userId]); // REPLACED db.query with await pool.query
+    const supplier = supplierResults[0];
+    supplier.products = productsResults;
+    res.json(supplier);
+  } catch (err) {
+    console.error("Error fetching supplier or products:", err);
+    return res.status(500).json({ message: "Error fetching supplier" });
+  }
 });
 
-app.post("/suppliers", authenticateToken, (req, res) => {
+app.post("/suppliers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { name, contact, address, billDate, products } = req.body;
   if (!name || !name.trim()) {
@@ -1026,48 +983,34 @@ app.post("/suppliers", authenticateToken, (req, res) => {
     INSERT INTO suppliers (name, contact, address, billDate, userId)
     VALUES (?, ?, ?, ?, ?)
   `;
-  db.query(supplierQuery, [name.trim(), contact, address || "", billDate, userId], (err, result) => {
-    if (err) {
-      console.error("Error adding supplier:", err);
-      return res.status(500).json({ message: "Error adding supplier" });
-    }
+  try {
+    const [result] = await pool.query(supplierQuery, [name.trim(), contact, address || "", billDate, userId]); // REPLACED db.query with await pool.query
     const supplierId = result.insertId;
     if (products && products.length > 0) {
       const productPromises = products.map(product => {
-        return new Promise((resolve, reject) => {
-          const productQuery = `
-            INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `;
-          db.query(productQuery, [
-            supplierId,
-            product.name,
-            product.quantity,
-            product.unit,
-            product.price,
-            product.category,
-            userId
-          ], (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
+        const productQuery = `
+          INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+        return pool.query(productQuery, [ // Used pool.query directly
+          supplierId,
+          product.name,
+          product.quantity,
+          product.unit,
+          product.price,
+          product.category,
+          userId
+        ]);
       });
-      Promise.all(productPromises)
-        .then(() => {
-          res.json({
-            id: supplierId,
-            name: name.trim(),
-            contact,
-            address,
-            billDate,
-            products
-          });
-        })
-        .catch((err) => {
-          console.error("Error adding supplier products:", err);
-          res.status(500).json({ message: "Supplier added but error adding products" });
-        });
+      await Promise.all(productPromises);
+      res.json({
+        id: supplierId,
+        name: name.trim(),
+        contact,
+        address,
+        billDate,
+        products
+      });
     } else {
       res.json({
         id: supplierId,
@@ -1078,10 +1021,13 @@ app.post("/suppliers", authenticateToken, (req, res) => {
         products: []
       });
     }
-  });
+  } catch (err) {
+    console.error("Error adding supplier or products:", err);
+    res.status(500).json({ message: "Error adding supplier" });
+  }
 });
 
-app.put("/suppliers/:id", authenticateToken, (req, res) => {
+app.put("/suppliers/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const supplierId = req.params.id;
   const { name, contact, address, billDate, products } = req.body;
@@ -1100,77 +1046,56 @@ app.put("/suppliers/:id", authenticateToken, (req, res) => {
     SET name = ?, contact = ?, address = ?, billDate = ?
     WHERE id = ? AND userId = ?
   `;
-  db.query(updateQuery, [name.trim(), contact, address || "", billDate, supplierId, userId], (err, result) => {
-    if (err) {
-      console.error("Error updating supplier:", err);
-      return res.status(500).json({ message: "Error updating supplier" });
-    }
+  try {
+    const [result] = await pool.query(updateQuery, [name.trim(), contact, address || "", billDate, supplierId, userId]); // REPLACED db.query with await pool.query
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Supplier not found" });
     }
-    db.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId], (err) => {
-      if (err) {
-        console.error("Error deleting old products:", err);
-        return res.status(500).json({ message: "Error updating supplier products" });
-      }
-      if (products && products.length > 0) {
-        const productPromises = products.map(product => {
-          return new Promise((resolve, reject) => {
-            const productQuery = `
-              INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
-            db.query(productQuery, [
-              supplierId,
-              product.name,
-              product.quantity,
-              product.unit,
-              product.price,
-              product.category,
-              userId
-            ], (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-        });
-        Promise.all(productPromises)
-          .then(() => {
-            res.json({ message: "Supplier updated successfully" });
-          })
-          .catch((err) => {
-            console.error("Error adding updated products:", err);
-            res.status(500).json({ message: "Supplier updated but error adding products" });
-          });
-      } else {
-        res.json({ message: "Supplier updated successfully" });
-      }
-    });
-  });
+    await pool.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId]); // REPLACED db.query with await pool.query
+    if (products && products.length > 0) {
+      const productPromises = products.map(product => {
+        const productQuery = `
+          INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+        return pool.query(productQuery, [ // Used pool.query directly
+          supplierId,
+          product.name,
+          product.quantity,
+          product.unit,
+          product.price,
+          product.category,
+          userId
+        ]);
+      });
+      await Promise.all(productPromises);
+      res.json({ message: "Supplier updated successfully" });
+    } else {
+      res.json({ message: "Supplier updated successfully" });
+    }
+  } catch (err) {
+    console.error("Error updating supplier or products:", err);
+    return res.status(500).json({ message: "Error updating supplier" });
+  }
 });
 
-app.delete("/suppliers/:id", authenticateToken, (req, res) => {
+app.delete("/suppliers/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const supplierId = req.params.id;
-  db.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId], (err) => {
-    if (err) {
-      console.error("Error deleting supplier products:", err);
-      return res.status(500).json({ message: "Error deleting supplier products" });
+  try {
+    await pool.query("DELETE FROM supplier_products WHERE supplierId = ? AND userId = ?", [supplierId, userId]); // REPLACED db.query with await pool.query
+    const [result] = await pool.query("DELETE FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId]); // REPLACED db.query with await pool.query
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Supplier not found" });
     }
-    db.query("DELETE FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId], (err, result) => {
-      if (err) {
-        console.error("Error deleting supplier:", err);
-        return res.status(500).json({ message: "Error deleting supplier" });
-      }
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Supplier not found" });
-      }
-      res.json({ message: "Supplier deleted successfully" });
-    });
-  });
+    res.json({ message: "Supplier deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting supplier or products:", err);
+    return res.status(500).json({ message: "Error deleting supplier" });
+  }
 });
 
-app.get("/suppliers/:id/products", authenticateToken, (req, res) => {
+app.get("/suppliers/:id/products", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const supplierId = req.params.id;
   const query = `
@@ -1179,16 +1104,16 @@ app.get("/suppliers/:id/products", authenticateToken, (req, res) => {
     WHERE sp.supplierId = ? AND sp.userId = ? AND s.userId = ?
     ORDER BY sp.name
   `;
-  db.query(query, [supplierId, userId, userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching supplier products:", err);
-      return res.status(500).json({ message: "Error fetching supplier products" });
-    }
+  try {
+    const [results] = await pool.query(query, [supplierId, userId, userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching supplier products:", err);
+    return res.status(500).json({ message: "Error fetching supplier products" });
+  }
 });
 
-app.post("/suppliers/:id/products", authenticateToken, (req, res) => {
+app.post("/suppliers/:id/products", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const supplierId = req.params.id;
   const { name, quantity, unit, price, category } = req.body;
@@ -1201,11 +1126,8 @@ app.post("/suppliers/:id/products", authenticateToken, (req, res) => {
   if (!price || price <= 0) {
     return res.status(400).json({ message: "Valid price is required" });
   }
-  db.query("SELECT id FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId], (err, supplierResults) => {
-    if (err) {
-      console.error("Error verifying supplier:", err);
-      return res.status(500).json({ message: "Error verifying supplier" });
-    }
+  try {
+    const [supplierResults] = await pool.query("SELECT id FROM suppliers WHERE id = ? AND userId = ?", [supplierId, userId]); // REPLACED db.query with await pool.query
     if (supplierResults.length === 0) {
       return res.status(404).json({ message: "Supplier not found" });
     }
@@ -1213,25 +1135,23 @@ app.post("/suppliers/:id/products", authenticateToken, (req, res) => {
       INSERT INTO supplier_products (supplierId, name, quantity, unit, price, category, userId)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
-    db.query(query, [supplierId, name.trim(), quantity, unit, price, category, userId], (err, result) => {
-      if (err) {
-        console.error("Error adding supplier product:", err);
-        return res.status(500).json({ message: "Error adding supplier product" });
-      }
-      res.json({
-        id: result.insertId,
-        supplierId: parseInt(supplierId),
-        name: name.trim(),
-        quantity,
-        unit,
-        price,
-        category
-      });
+    const [result] = await pool.query(query, [supplierId, name.trim(), quantity, unit, price, category, userId]); // REPLACED db.query with await pool.query
+    res.json({
+      id: result.insertId,
+      supplierId: parseInt(supplierId),
+      name: name.trim(),
+      quantity,
+      unit,
+      price,
+      category
     });
-  });
+  } catch (err) {
+    console.error("Error adding supplier product:", err);
+    return res.status(500).json({ message: "Error adding supplier product" });
+  }
 });
 
-app.delete("/supplier-products/:id", authenticateToken, (req, res) => {
+app.delete("/supplier-products/:id", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const productId = req.params.id;
   const query = `
@@ -1239,19 +1159,19 @@ app.delete("/supplier-products/:id", authenticateToken, (req, res) => {
     JOIN suppliers s ON sp.supplierId = s.id
     WHERE sp.id = ? AND sp.userId = ? AND s.userId = ?
   `;
-  db.query(query, [productId, userId, userId], (err, result) => {
-    if (err) {
-      console.error("Error deleting supplier product:", err);
-      return res.status(500).json({ message: "Error deleting supplier product" });
-    }
+  try {
+    const [result] = await pool.query(query, [productId, userId, userId]); // REPLACED db.query with await pool.query
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Supplier product not found" });
     }
     res.json({ message: "Supplier product deleted successfully" });
-  });
+  } catch (err) {
+    console.error("Error deleting supplier product:", err);
+    return res.status(500).json({ message: "Error deleting supplier product" });
+  }
 });
 
-app.get("/inventory", authenticateToken, (req, res) => {
+app.get("/inventory", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT
@@ -1267,16 +1187,16 @@ app.get("/inventory", authenticateToken, (req, res) => {
     GROUP BY name, unit, category
     ORDER BY name
   `;
-  db.query(query, [userId, userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching inventory:", err);
-      return res.status(500).json({ message: "Error fetching inventory" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId, userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching inventory:", err);
+    return res.status(500).json({ message: "Error fetching inventory" });
+  }
 });
 
-app.get("/suppliers/stats", authenticateToken, (req, res) => {
+app.get("/suppliers/stats", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT
@@ -1288,11 +1208,8 @@ app.get("/suppliers/stats", authenticateToken, (req, res) => {
     LEFT JOIN supplier_products sp ON s.id = sp.supplierId
     WHERE s.userId = ?
   `;
-  db.query(query, [userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching supplier stats:", err);
-      return res.status(500).json({ message: "Error fetching supplier statistics" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId]); // REPLACED db.query with await pool.query
     const stats = results[0] || {
       totalSuppliers: 0,
       totalProducts: 0,
@@ -1300,39 +1217,43 @@ app.get("/suppliers/stats", authenticateToken, (req, res) => {
       averageOrderValue: 0
     };
     res.json(stats);
-  });
+  } catch (err) {
+    console.error("Error fetching supplier stats:", err);
+    return res.status(500).json({ message: "Error fetching supplier statistics" });
+  }
 });
 
 // --- Bread Sales Management ---
-app.get("/bread/price", authenticateToken, (req, res) => {
+app.get("/bread/price", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  db.query("SELECT price FROM bread_prices WHERE userId = ? ORDER BY dateUpdated DESC LIMIT 1", [userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching bread price:", err);
-      return res.status(500).json({ message: "Error fetching bread price" });
-    }
+  try {
+    const [results] = await pool.query("SELECT price FROM bread_prices WHERE userId = ? ORDER BY dateUpdated DESC LIMIT 1", [userId]); // REPLACED db.query with await pool.query
     const price = results.length > 0 ? results[0].price : 45;
     res.json({ price });
-  });
+  } catch (err) {
+    console.error("Error fetching bread price:", err);
+    return res.status(500).json({ message: "Error fetching bread price" });
+  }
 });
 
-app.put("/bread/price", authenticateToken, (req, res) => {
+
+app.put("/bread/price", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { price } = req.body;
   if (!price || price <= 0) {
     return res.status(400).json({ message: "Valid price is required" });
   }
   const query = "INSERT INTO bread_prices (userId, price) VALUES (?, ?)";
-  db.query(query, [userId, parseFloat(price)], (err, result) => {
-    if (err) {
-      console.error("Error updating bread price:", err);
-      return res.status(500).json({ message: "Error updating bread price" });
-    }
+  try {
+    await pool.query(query, [userId, parseFloat(price)]); // REPLACED db.query with await pool.query
     res.json({ price: parseFloat(price), message: "Price updated successfully" });
-  });
+  } catch (err) {
+    console.error("Error updating bread price:", err);
+    return res.status(500).json({ message: "Error updating bread price" });
+  }
 });
 
-app.get("/bread/customers", authenticateToken, (req, res) => {
+app.get("/bread/customers", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT
@@ -1356,16 +1277,16 @@ app.get("/bread/customers", authenticateToken, (req, res) => {
     ) payments_total ON bc.id = payments_total.customerId
     WHERE bc.userId = ?
   `;
-  db.query(query, [userId, userId, userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching bread customers:", err);
-      return res.status(500).json({ message: "Error fetching customers" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId, userId, userId]); // REPLACED db.query with await pool.query
     res.json(results);
-  });
+  } catch (err) {
+    console.error("Error fetching bread customers:", err);
+    return res.status(500).json({ message: "Error fetching customers" });
+  }
 });
 
-app.get("/bread/customers/:id/details", authenticateToken, (req, res) => {
+app.get("/bread/customers/:id/details", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const customerId = req.params.id;
   const customerQuery = "SELECT * FROM bread_customers WHERE id = ? AND userId = ?";
@@ -1379,30 +1300,24 @@ app.get("/bread/customers/:id/details", authenticateToken, (req, res) => {
     WHERE customerId = ? AND userId = ?
     ORDER BY paymentDate DESC, paymentTime DESC
   `;
-  db.query(customerQuery, [customerId, userId], (err, customerResults) => {
-    if (err || customerResults.length === 0) {
+  try {
+    const [customerResults] = await pool.query(customerQuery, [customerId, userId]); // REPLACED db.query with await pool.query
+    if (customerResults.length === 0) {
       return res.status(404).json({ message: "Customer not found" });
     }
     const customer = customerResults[0];
-    db.query(salesQuery, [customerId, userId], (err, salesResults) => {
-      if (err) {
-        console.error("Error fetching customer sales:", err);
-        return res.status(500).json({ message: "Error fetching customer sales" });
-      }
-      db.query(paymentsQuery, [customerId, userId], (err, paymentsResults) => {
-        if (err) {
-          console.error("Error fetching customer payments:", err);
-          return res.status(500).json({ message: "Error fetching customer payments" });
-        }
-        customer.sales = salesResults;
-        customer.payments = paymentsResults;
-        res.json(customer);
-      });
-    });
-  });
+    const [salesResults] = await pool.query(salesQuery, [customerId, userId]); // REPLACED db.query with await pool.query
+    const [paymentsResults] = await pool.query(paymentsQuery, [customerId, userId]); // REPLACED db.query with await pool.query
+    customer.sales = salesResults;
+    customer.payments = paymentsResults;
+    res.json(customer);
+  } catch (err) {
+    console.error("Error fetching customer details:", err);
+    return res.status(500).json({ message: "Error fetching customer details" });
+  }
 });
 
-app.post("/bread/sales", authenticateToken, (req, res) => {
+app.post("/bread/sales", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { customerName, quantity, pricePerDozen } = req.body;
   if (!customerName || !customerName.trim()) {
@@ -1416,49 +1331,42 @@ app.post("/bread/sales", authenticateToken, (req, res) => {
   }
   const billAmount = parseFloat(quantity) * parseFloat(pricePerDozen);
   const checkCustomerQuery = "SELECT id FROM bread_customers WHERE name = ? AND userId = ?";
-  db.query(checkCustomerQuery, [customerName.trim(), userId], (err, customerResults) => {
-    if (err) {
-      console.error("Error checking customer:", err);
-      return res.status(500).json({ message: "Error processing sale" });
-    }
-    const processSale = (customerId) => {
-      const saleQuery = `
-        INSERT INTO bread_sales (customerId, customerName, quantity, pricePerDozen, billAmount, userId)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `;
-      db.query(saleQuery, [customerId, customerName.trim(), quantity, pricePerDozen, billAmount, userId], (err, result) => {
-        if (err) {
-          console.error("Error adding bread sale:", err);
-          return res.status(500).json({ message: "Error adding sale" });
-        }
-        res.json({
-          id: result.insertId,
-          customerId,
-          customerName: customerName.trim(),
-          quantity: parseFloat(quantity),
-          pricePerDozen: parseFloat(pricePerDozen),
-          billAmount,
-          saleDate: new Date().toISOString().split('T')[0],
-          saleTime: new Date().toTimeString().split(' ')[0]
-        });
-      });
-    };
+
+  try {
+    let customerId;
+    const [customerResults] = await pool.query(checkCustomerQuery, [customerName.trim(), userId]); // REPLACED db.query with await pool.query
+
     if (customerResults.length > 0) {
-      processSale(customerResults[0].id);
+      customerId = customerResults[0].id;
     } else {
       const createCustomerQuery = "INSERT INTO bread_customers (name, userId) VALUES (?, ?)";
-      db.query(createCustomerQuery, [customerName.trim(), userId], (err, result) => {
-        if (err) {
-          console.error("Error creating customer:", err);
-          return res.status(500).json({ message: "Error creating customer" });
-        }
-        processSale(result.insertId);
-      });
+      const [result] = await pool.query(createCustomerQuery, [customerName.trim(), userId]); // REPLACED db.query with await pool.query
+      customerId = result.insertId;
     }
-  });
+
+    const saleQuery = `
+      INSERT INTO bread_sales (customerId, customerName, quantity, pricePerDozen, billAmount, userId)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const [result] = await pool.query(saleQuery, [customerId, customerName.trim(), quantity, pricePerDozen, billAmount, userId]); // REPLACED db.query with await pool.query
+    
+    res.json({
+      id: result.insertId,
+      customerId,
+      customerName: customerName.trim(),
+      quantity: parseFloat(quantity),
+      pricePerDozen: parseFloat(pricePerDozen),
+      billAmount,
+      saleDate: new Date().toISOString().split('T')[0],
+      saleTime: new Date().toTimeString().split(' ')[0]
+    });
+  } catch (err) {
+    console.error("Error processing sale:", err);
+    return res.status(500).json({ message: "Error processing sale" });
+  }
 });
 
-app.post("/bread/payments", authenticateToken, (req, res) => {
+app.post("/bread/payments", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const { customerName, amount } = req.body;
   if (!customerName || !customerName.trim()) {
@@ -1468,15 +1376,14 @@ app.post("/bread/payments", authenticateToken, (req, res) => {
     return res.status(400).json({ message: "Valid payment amount is required" });
   }
   const findCustomerQuery = "SELECT id FROM bread_customers WHERE name = ? AND userId = ?";
-  db.query(findCustomerQuery, [customerName.trim(), userId], (err, customerResults) => {
-    if (err) {
-      console.error("Error finding customer:", err);
-      return res.status(500).json({ message: "Error processing payment" });
-    }
+  
+  try {
+    const [customerResults] = await pool.query(findCustomerQuery, [customerName.trim(), userId]); // REPLACED db.query with await pool.query
     if (customerResults.length === 0) {
       return res.status(404).json({ message: "Customer not found" });
     }
     const customerId = customerResults[0].id;
+    
     const balanceQuery = `
       SELECT
         COALESCE(SUM(bs.billAmount), 0) - COALESCE(SUM(bp.amount), 0) as balance
@@ -1485,38 +1392,34 @@ app.post("/bread/payments", authenticateToken, (req, res) => {
       LEFT JOIN bread_payments bp ON bc.id = bp.customerId
       WHERE bc.id = ? AND bc.userId = ?
     `;
-    db.query(balanceQuery, [customerId, userId], (err, balanceResults) => {
-      if (err) {
-        console.error("Error checking balance:", err);
-        return res.status(500).json({ message: "Error checking balance" });
-      }
-      const currentBalance = balanceResults[0]?.balance || 0;
-      if (parseFloat(amount) > currentBalance) {
-        return res.status(400).json({ message: "Payment amount cannot exceed outstanding balance" });
-      }
-      const paymentQuery = `
-        INSERT INTO bread_payments (customerId, customerName, amount, userId)
-        VALUES (?, ?, ?, ?)
-      `;
-      db.query(paymentQuery, [customerId, customerName.trim(), parseFloat(amount), userId], (err, result) => {
-        if (err) {
-          console.error("Error recording payment:", err);
-          return res.status(500).json({ message: "Error recording payment" });
-        }
-        res.json({
-          id: result.insertId,
-          customerId,
-          customerName: customerName.trim(),
-          amount: parseFloat(amount),
-          paymentDate: new Date().toISOString().split('T')[0],
-          paymentTime: new Date().toTimeString().split(' ')[0]
-        });
-      });
+    const [balanceResults] = await pool.query(balanceQuery, [customerId, userId]); // REPLACED db.query with await pool.query
+    
+    const currentBalance = balanceResults[0]?.balance || 0;
+    if (parseFloat(amount) > currentBalance) {
+      return res.status(400).json({ message: "Payment amount cannot exceed outstanding balance" });
+    }
+    
+    const paymentQuery = `
+      INSERT INTO bread_payments (customerId, customerName, amount, userId)
+      VALUES (?, ?, ?, ?)
+    `;
+    const [result] = await pool.query(paymentQuery, [customerId, customerName.trim(), parseFloat(amount), userId]); // REPLACED db.query with await pool.query
+    
+    res.json({
+      id: result.insertId,
+      customerId,
+      customerName: customerName.trim(),
+      amount: parseFloat(amount),
+      paymentDate: new Date().toISOString().split('T')[0],
+      paymentTime: new Date().toTimeString().split(' ')[0]
     });
-  });
+  } catch (err) {
+    console.error("Error processing payment:", err);
+    return res.status(500).json({ message: "Error processing payment" });
+  }
 });
 
-app.get("/bread/stats", authenticateToken, (req, res) => {
+app.get("/bread/stats", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
   const query = `
     SELECT
@@ -1528,11 +1431,8 @@ app.get("/bread/stats", authenticateToken, (req, res) => {
     FROM bread_customers bc
     WHERE bc.userId = ?
   `;
-  db.query(query, [userId, userId, userId, userId, userId], (err, results) => {
-    if (err) {
-      console.error("Error fetching bread stats:", err);
-      return res.status(500).json({ message: "Error fetching statistics" });
-    }
+  try {
+    const [results] = await pool.query(query, [userId, userId, userId, userId, userId]); // REPLACED db.query with await pool.query
     const stats = results[0] || {
       totalSales: 0,
       totalPaid: 0,
@@ -1545,7 +1445,10 @@ app.get("/bread/stats", authenticateToken, (req, res) => {
       totalOutstanding: parseFloat(stats.totalOutstanding || 0),
       customerCount: parseInt(stats.customerCount || 0)
     });
-  });
+  } catch (err) {
+    console.error("Error fetching bread stats:", err);
+    return res.status(500).json({ message: "Error fetching statistics" });
+  }
 });
 
 // --- Server Startup ---
