@@ -13,13 +13,13 @@ const allowedOrigins = [
   "capacitor://localhost",  // for iOS/Android apps using Capacitor
   "http://localhost",       // Android WebView
   "https://retailmatrix-production-e3e0.up.railway.app/"
-]; 
+];
 
 app.use(cors({
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -80,7 +80,7 @@ function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     const now = Math.floor(Date.now() / 1000);
     if (decoded.exp <= now) {
       return res.status(401).json({ message: "Session expired, please login again" });
@@ -129,8 +129,8 @@ app.post("/signup", async (req, res) => {
     // Check for password complexity (at least one uppercase, lowercase, number)
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$/;
     if (!passwordRegex.test(password)) {
-      return res.status(400).json({ 
-        error: "Password must contain at least one uppercase letter, one lowercase letter, and one number" 
+      return res.status(400).json({
+        error: "Password must contain at least one uppercase letter, one lowercase letter, and one number"
       });
     }
 
@@ -144,13 +144,13 @@ app.post("/signup", async (req, res) => {
 
     // Hash password with higher salt rounds for better security
     const hashedPassword = await bcrypt.hash(password, 12);
-    
+
     const insertSql = "INSERT INTO users (email, password, createdAt) VALUES (?, ?, NOW())";
     try {
       const [result] = await pool.query(insertSql, [normalizedEmail, hashedPassword]); // REPLACED db.query with await pool.query
-      res.status(201).json({ 
+      res.status(201).json({
         message: "Account created successfully",
-        userId: result.insertId 
+        userId: result.insertId
       });
     } catch (err) {
       console.error("Database error during user creation:", err);
@@ -190,34 +190,34 @@ app.post("/login", async (req, res) => {
 
     res.json({ token, user: { id: user.id, email: user.email } });
   } catch (err) {
-    console.error("Login error:", err);
+    console.error("Login error:", err.message);
     console.log("Received login request:", req.body);
-console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ missing");
+    console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ missing");
 
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 app.post("/logout", (req, res) => {
- res.clearCookie("token", {
-  httpOnly: true,
-  secure: false,
-  sameSite: 'none',
-  path: '/'
-});
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'none',
+    path: '/'
+  });
   res.json({ message: "Logged out successfully" });
 });
 
 app.get("/profile", async (req, res) => { // Made async
   const token = req.cookies.token;
-  
+
   if (!token) {
     return res.status(401).json({ message: "Authentication required" });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     // Fetch fresh user data from database
     const sql = "SELECT id, email, createdAt, lastLoginAt FROM users WHERE id = ?";
     const [results] = await pool.query(sql, [decoded.id]); // REPLACED db.query with await pool.query
@@ -227,7 +227,7 @@ app.get("/profile", async (req, res) => { // Made async
     }
 
     const user = results[0];
-    res.json({ 
+    res.json({
       user: {
         id: user.id,
         email: user.email,
@@ -484,7 +484,7 @@ app.get("/expenses", authenticateToken, async (req, res) => { // Made async
     WHERE userId = ? 
     ORDER BY date DESC, createdAt DESC
   `;
-  
+
   try {
     const [results] = await pool.query(query, [userId]); // REPLACED db.query with await pool.query
     res.json(results);
@@ -505,19 +505,19 @@ app.post("/expenses", authenticateToken, async (req, res) => { // Made async
   }
 
   // Validate each expense item
-  const invalidExpenses = expenses.filter(expense => 
-    !expense.itemName || 
-    !expense.category || 
-    !expense.quantity || 
-    !expense.pricePerUnit || 
+  const invalidExpenses = expenses.filter(expense =>
+    !expense.itemName ||
+    !expense.category ||
+    !expense.quantity ||
+    !expense.pricePerUnit ||
     !expense.unit ||
     parseFloat(expense.quantity) <= 0 ||
     parseFloat(expense.pricePerUnit) <= 0
   );
 
   if (invalidExpenses.length > 0) {
-    return res.status(400).json({ 
-      error: "All expense fields are required and quantity/price must be positive" 
+    return res.status(400).json({
+      error: "All expense fields are required and quantity/price must be positive"
     });
   }
 
@@ -578,7 +578,7 @@ app.put("/expenses/:id", authenticateToken, async (req, res) => { // Made async
   }
 
   const totalAmount = parseFloat(quantity) * parseFloat(pricePerUnit);
-  
+
   const updateQuery = `
     UPDATE expenses 
     SET itemName = ?, category = ?, quantity = ?, pricePerUnit = ?, 
@@ -603,7 +603,7 @@ app.put("/expenses/:id", authenticateToken, async (req, res) => { // Made async
       return res.status(404).json({ error: "Expense not found" });
     }
 
-    res.json({ 
+    res.json({
       message: "Expense updated successfully",
       expense: {
         id: parseInt(expenseId),
@@ -646,7 +646,7 @@ app.delete("/expenses/:id", authenticateToken, async (req, res) => { // Made asy
 // Get expense statistics
 app.get("/expenses/stats", authenticateToken, async (req, res) => { // Made async
   const userId = req.user.id;
-  
+
   const statsQuery = `
     SELECT 
       COUNT(*) as totalExpenses,
@@ -693,7 +693,7 @@ app.get("/expenses/stats", authenticateToken, async (req, res) => { // Made asyn
         category: cat.category,
         totalAmount: parseFloat(cat.categoryTotal || 0),
         count: parseInt(cat.categoryCount || 0),
-        percentage: overall.totalAmount > 0 ? 
+        percentage: overall.totalAmount > 0 ?
           ((parseFloat(cat.categoryTotal || 0) / parseFloat(overall.totalAmount)) * 100) : 0
       }))
     });
@@ -1352,7 +1352,7 @@ app.post("/bread/sales", authenticateToken, async (req, res) => { // Made async
       VALUES (?, ?, ?, ?, ?, ?)
     `;
     const [result] = await pool.query(saleQuery, [customerId, customerName.trim(), quantity, pricePerDozen, billAmount, userId]); // REPLACED db.query with await pool.query
-    
+
     res.json({
       id: result.insertId,
       customerId,
@@ -1379,14 +1379,14 @@ app.post("/bread/payments", authenticateToken, async (req, res) => { // Made asy
     return res.status(400).json({ message: "Valid payment amount is required" });
   }
   const findCustomerQuery = "SELECT id FROM bread_customers WHERE name = ? AND userId = ?";
-  
+
   try {
     const [customerResults] = await pool.query(findCustomerQuery, [customerName.trim(), userId]); // REPLACED db.query with await pool.query
     if (customerResults.length === 0) {
       return res.status(404).json({ message: "Customer not found" });
     }
     const customerId = customerResults[0].id;
-    
+
     const balanceQuery = `
       SELECT
         COALESCE(SUM(bs.billAmount), 0) - COALESCE(SUM(bp.amount), 0) as balance
@@ -1396,18 +1396,18 @@ app.post("/bread/payments", authenticateToken, async (req, res) => { // Made asy
       WHERE bc.id = ? AND bc.userId = ?
     `;
     const [balanceResults] = await pool.query(balanceQuery, [customerId, userId]); // REPLACED db.query with await pool.query
-    
+
     const currentBalance = balanceResults[0]?.balance || 0;
     if (parseFloat(amount) > currentBalance) {
       return res.status(400).json({ message: "Payment amount cannot exceed outstanding balance" });
     }
-    
+
     const paymentQuery = `
       INSERT INTO bread_payments (customerId, customerName, amount, userId)
       VALUES (?, ?, ?, ?)
     `;
     const [result] = await pool.query(paymentQuery, [customerId, customerName.trim(), parseFloat(amount), userId]); // REPLACED db.query with await pool.query
-    
+
     res.json({
       id: result.insertId,
       customerId,
