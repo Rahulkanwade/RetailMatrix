@@ -191,6 +191,9 @@ app.post("/login", async (req, res) => {
     res.json({ token, user: { id: user.id, email: user.email } });
   } catch (err) {
     console.error("Login error:", err);
+    console.log("Received login request:", req.body);
+console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ set" : "❌ missing");
+
     res.status(500).json({ error: "Internal server error" });
   }
 });
