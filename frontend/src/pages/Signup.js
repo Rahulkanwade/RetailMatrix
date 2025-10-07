@@ -12,12 +12,14 @@ function Signup() {
   const handleSignup = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}signup`, { email, password });
+      await axios.post(`${API_URL}/signup`, { email, password });
       alert("Signup successful! Please login.");
       navigate('/login');
     } catch (err) {
-      alert("Signup failed");
-    }
+  console.error("Signup error:", err.response?.data || err.message);
+  alert(err.response?.data?.message || "Signup failed");
+}
+
   };
 
   return (

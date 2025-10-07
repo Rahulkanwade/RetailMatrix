@@ -57,7 +57,7 @@ const validator = require('validator');
 const rateLimit = require('express-rate-limit');
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs for auth endpoints
+  max: 10, // limit each IP to 5 requests per windowMs for auth endpoints
   message: { error: "Too many authentication attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
@@ -71,7 +71,7 @@ async function checkDbConnection() {
   try {
     // Use pool.getConnection to verify connection
     const connection = await pool.getConnection();
-    console.log("✅ Connected to Railway MySQL");
+    console.log("✅ Connected to MySQL");
     connection.release();
   } catch (err) {
     console.error("Database connection failed:", err);
