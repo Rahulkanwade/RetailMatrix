@@ -1,3 +1,4 @@
+const fs = require("fs");
 const express = require("express");
 // const mysql = require("mysql2"); // REMOVED: Redundant import, using mysql2/promise instead
 const cors = require("cors");
@@ -6,7 +7,18 @@ const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const mysql = require('mysql2/promise'); // Using promise-based client
 require("dotenv").config();
-
+let sslConfig = false;
+if (process.env.MYSQL_SSL === "true") {
+  if (process.env.MYSQL_CA_FILE) {
+    // Use CA certificate file if provided (production)
+    sslConfig = {
+      ca: fs.readFileSync(process.env.MYSQL_CA_FILE)
+    };
+  } else {
+    // Quick dev/test: ignore self-signed certificate
+    sslConfig = { rejectUnauthorized: false };
+  }
+}
 const app = express();
 const allowedOrigins = [
   "http://localhost:3000", // for local testing
@@ -39,8 +51,7 @@ const pool = mysql.createPool({
   password: process.env.MYSQLPASSWORD,
   database: process.env.MYSQLDATABASE,
   port: process.env.MYSQLPORT,
-  ssl: { rejectUnauthorized: false }
-});
+    ssl: sslConfig});
 
 const validator = require('validator');
 const rateLimit = require('express-rate-limit');
