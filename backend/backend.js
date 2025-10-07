@@ -21,24 +21,26 @@ if (process.env.MYSQL_SSL === "true") {
 }
 const app = express();
 const allowedOrigins = [
-  "http://localhost:3000", // for local testing
-  "capacitor://localhost",  // for iOS/Android apps using Capacitor
-  "http://localhost",       // Android WebView
-  "https://retailmatrix-production-e3e0.up.railway.app/"
+  "http://localhost:3000",
+  "capacitor://localhost",
+  "http://localhost",
+  "https://retailmatrix1.onrender.com"
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin (Postman, mobile apps, curl)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(null, true); // For development, allow all origins temporarily
+      callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true,
+  credentials: true,  // Important for cookies
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'], // Allow preflight
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'], // Headers your frontend sends
 }));
 
 app.use(cookieParser());
@@ -101,6 +103,7 @@ function authenticateToken(req, res, next) {
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
+      console.error("JWT Expired for user:", req.user?.email, "Error:", err.message); // ADD THIS
       return res.status(401).json({ message: "Session expired, please login again" });
     }
     if (err.name === 'JsonWebTokenError') {
@@ -232,44 +235,27 @@ app.post("/logout", (req, res) => {
   res.json({ message: "Logged out successfully" });
 });
 
-app.get("/profile", async (req, res) => { // Made async
-  const token = req.cookies.token;
+app.get("/profile", authenticateToken, async (req, res) => { // Use the standard middleware
+  const user = req.user; // Token verified, user data is available
+  // Fetch fresh user data from database
+  const sql = "SELECT id, email, createdAt, lastLoginAt FROM users WHERE id = ?";
+  const [results] = await pool.query(sql, [user.id]);
 
-  if (!token) {
-    return res.status(401).json({ message: "Authentication required" });
+  if (results.length === 0) {
+    return res.status(404).json({ message: "User not found" });
   }
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Fetch fresh user data from database
-    const sql = "SELECT id, email, createdAt, lastLoginAt FROM users WHERE id = ?";
-    const [results] = await pool.query(sql, [decoded.id]); // REPLACED db.query with await pool.query
-
-    if (results.length === 0) {
-      return res.status(404).json({ message: "User not found" });
+  const userData = results[0];
+  res.json({
+    user: {
+      id: userData.id,
+      email: userData.email,
+      createdAt: userData.createdAt,
+      lastLoginAt: userData.lastLoginAt
     }
+  });
 
-    const user = results[0];
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        createdAt: user.createdAt,
-        lastLoginAt: user.lastLoginAt
-      }
-    });
-
-  } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: "Session expired, please login again" });
-    }
-    if (err.name === 'JsonWebTokenError') {
-      return res.status(401).json({ message: "Invalid session, please login again" });
-    }
-    console.error("Profile verification error:", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
+  // Remove the old manual token verification and cookie check from inside this route.
 });
 
 // --- Customer & Order Management ---
