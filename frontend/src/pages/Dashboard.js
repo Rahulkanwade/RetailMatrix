@@ -23,25 +23,31 @@ function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await axios.get(`${API_URL}/profile`, {
-          withCredentials: true
-        });
-        setUser(res.data.user);
+useEffect(() => {
+  const fetchUser = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) throw new Error('No token found');
 
-        setLoading(false);
-      } catch (err) {
-        console.log("Auth error", err);
-        setError("Failed to load user profile");
-        setLoading(false);
-        navigate("/login");
-      }
-    };
+      const res = await axios.get(`${API_URL}/profile`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
 
-    fetchUser();
-  }, [navigate]);
+      setUser(res.data.user);
+      setLoading(false);
+    } catch (err) {
+      console.log("Auth error", err);
+      setError("Failed to load user profile");
+      setLoading(false);
+      navigate("/login");
+    }
+  };
+
+  fetchUser();
+}, [navigate]);
+
 
   const dashboardItems = [
     {
