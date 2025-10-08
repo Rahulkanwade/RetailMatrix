@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import axios from "axios";
 import {
     Table,
     Button,
@@ -15,7 +16,7 @@ import {
     ListGroup,
 } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+
 import {
     BsFillCartPlusFill,
     BsTrash,
@@ -28,9 +29,21 @@ import {
 
 // This should be in a .env file in a real-world app
 // src/config.js
-export const API_URL = process.env.REACT_APP_API_BASE || "http://localhost:5000";
-
-
+const API_URL = process.env.REACT_APP_API_BASE || "http://localhost:5000";
+const axiosInstance = axios.create({
+  baseURL: API_URL,
+  withCredentials: true,
+});
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 const CakeManagement = () => {
     const [orders, setOrders] = useState([]);
     const [showModal, setShowModal] = useState(false);
@@ -79,7 +92,7 @@ const CakeManagement = () => {
 
     const fetchOrders = async () => {
         try {
-            const response = await axios.get(`${API_URL}/orders`, { withCredentials: true });
+            const response = await axiosInstance.get("/orders");
             setOrders(response.data);
         } catch (error) {
             console.error("Error fetching orders:", error);
@@ -89,7 +102,7 @@ const CakeManagement = () => {
 
     const fetchCustomers = async () => {
         try {
-            const response = await axios.get(`${API_URL}/customers`, { withCredentials: true });
+            const response = await axiosInstance.get("/customers");
             setCustomers(response.data.map(customer => customer.name));
         } catch (error) {
             console.error("Error fetching customers:", error);
@@ -100,7 +113,7 @@ const CakeManagement = () => {
 
     const fetchPrices = async () => {
         try {
-            const response = await axios.get(`${API_URL}/prices`, { withCredentials: true });
+            const response = await axiosInstance.get("/prices");
             const prices = response.data;
             const cakePricesObj = { ...cakePrices };
             prices.filter(price => price.type === "cake").forEach(price => {
@@ -121,7 +134,7 @@ const CakeManagement = () => {
         const trimmedName = newCustomerName.trim();
         if (trimmedName && !customers.includes(trimmedName)) {
             try {
-                await axios.post(`${API_URL}/customers`, { name: trimmedName });
+                await axios.post("/customers", { name: trimmedName });
                 setCustomers([...customers, trimmedName]);
                 setNewOrder({ ...newOrder, customer: trimmedName });
                 setNewCustomerName("");
@@ -311,7 +324,7 @@ const CakeManagement = () => {
 
         try {
             console.log("Sending order to server:", orderWithPrices);
-            await axios.post(`${API_URL}/orders`, orderWithPrices);
+         axiosInstance.post("/orders", orderWithPrices)
             fetchOrders();
             handleClose();
         } catch (error) {
@@ -322,7 +335,7 @@ const CakeManagement = () => {
     
     const updateDeliveryDate = async (orderId, date) => {
         try {
-            await axios.put(`${API_URL}/orders/${orderId}`, { deliveryDate: date });
+           await axiosInstance.put(`/orders/${orderId}`, { deliveryDate: date });
             setOrders(orders.map(order => order.id === orderId ? { ...order, deliveryDate: date } : order));
         } catch (error) {
             console.error("Error updating delivery date:", error);
@@ -332,7 +345,7 @@ const CakeManagement = () => {
 
     const deleteOrder = async (orderId) => {
         try {
-            await axios.delete(`${API_URL}/orders/${orderId}`);
+           await axiosInstance.delete(`/orders/${orderId}`);
             setOrders(orders.filter(order => order.id !== orderId));
         } catch (error) {
             console.error("Error deleting order:", error);
@@ -342,7 +355,7 @@ const CakeManagement = () => {
 
     const updatePrice = async (type, weight, price) => {
         try {
-            await axios.put(`${API_URL}/prices`, { type, weight, price });
+           axiosInstance.put(`/prices`, { type, weight, price })
         } catch (error) {
             console.error("Error updating price:", error);
             setError("Failed to update price in the database.");

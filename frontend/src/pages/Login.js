@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios'; // <-- ADDED: Need Axios to set default headers
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE;
 
@@ -39,11 +38,6 @@ function Login() {
     if (data.token) {
       localStorage.setItem('authToken', data.token);
       localStorage.setItem('userEmail', data.user.email);
-      
-      // 🔑 CRITICAL FIX ADDED HERE: 
-      // Set the default Authorization header for Axios requests
-      axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`; //
-
       navigate("/dashboard");
     } else {
       throw new Error('No token received from server');

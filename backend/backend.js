@@ -296,27 +296,33 @@ app.get("/orders", authenticateToken, async (req, res) => { // Made async
   }
 });
 
-app.post("/orders", authenticateToken, async (req, res) => { // Made async
-  const userId = req.user.id;
-  const { customer, orderDate, deliveryDate, cakes, pastries } = req.body;
-  const query = `
-    INSERT INTO orders (customer, orderDate, deliveryDate, cakes, pastries, userId)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `;
+app.post("/orders", authenticateToken, async (req, res) => {
+  const { customer, cakes, pastries, orderDate, deliveryDate, userId } = req.body;
+
+  // 👇 Convert "Pending" or empty string into NULL for MySQL
+  const deliveryValue =
+    !deliveryDate || deliveryDate === "Pending" ? null : deliveryDate;
+
   try {
-    const [result] = await pool.query(query, [ // REPLACED db.query with await pool.query
-      customer,
-      orderDate,
-      deliveryDate,
-      JSON.stringify(cakes),
-      JSON.stringify(pastries),
-      userId
-    ]);
-    res.json({ id: result.insertId });
+    const [result] = await db.query(
+      "INSERT INTO orders (customer, orderDate, deliveryDate, cakes, pastries, userId) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        customer,
+        orderDate,
+        deliveryValue,
+        JSON.stringify(cakes),
+        JSON.stringify(pastries),
+        userId,
+      ]
+    );
+
+    res.json({ message: "Order added successfully", id: result.insertId });
   } catch (err) {
-    return res.status(500).json({ error: "Failed to add order" });
+    console.error("❌ Error adding order:", err);
+    res.status(500).json({ message: "Internal Server Error", error: err.message });
   }
 });
+
 
 app.put("/orders/:id", async (req, res) => { // Made async
   const { deliveryDate } = req.body;
