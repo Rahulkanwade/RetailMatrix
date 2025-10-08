@@ -279,32 +279,42 @@ app.post("/customers", authenticateToken, async (req, res) => { // Made async
     return res.status(500).json({ error: "Failed to add customer" });
   }
 });
-
-app.get("/orders", authenticateToken, async (req, res) => { // Made async
+// 🧾 Fetch all orders for the logged-in user
+app.get("/orders", authenticateToken, async (req, res) => {
   const userId = req.user.id;
+
   try {
-    const [results] = await pool.query("SELECT * FROM orders WHERE userId = ? ORDER BY orderDate DESC", [userId]); // REPLACED db.query with await pool.query
+    const [results] = await pool.query(
+      "SELECT * FROM orders WHERE userId = ? ORDER BY orderDate DESC",
+      [userId]
+    );
+
     const parsed = results.map((order) => ({
       ...order,
       customerId: order.customerId || null,
       cakes: JSON.parse(order.cakes),
-      pastries: JSON.parse(order.pastries)
+      pastries: JSON.parse(order.pastries),
     }));
+
     res.json(parsed);
   } catch (err) {
+    console.error("❌ Error fetching orders:", err);
     return res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
 
-app.post("/orders", authenticateToken, async (req, res) => {
-  const { customer, cakes, pastries, orderDate, deliveryDate, userId } = req.body;
 
-  // 👇 Convert "Pending" or empty string into NULL for MySQL
+// ➕ Add a new order
+app.post("/orders", authenticateToken, async (req, res) => {
+  const userId = req.user.id; // ✅ always use JWT user ID
+  const { customer, cakes, pastries, orderDate, deliveryDate } = req.body;
+
+  // Convert "Pending" or empty deliveryDate to NULL
   const deliveryValue =
     !deliveryDate || deliveryDate === "Pending" ? null : deliveryDate;
 
   try {
-    const [result] = await db.query(
+    const [result] = await pool.query(
       "INSERT INTO orders (customer, orderDate, deliveryDate, cakes, pastries, userId) VALUES (?, ?, ?, ?, ?, ?)",
       [
         customer,
@@ -324,26 +334,37 @@ app.post("/orders", authenticateToken, async (req, res) => {
 });
 
 
-app.put("/orders/:id", async (req, res) => { // Made async
+// 🕓 Update delivery date
+app.put("/orders/:id", authenticateToken, async (req, res) => {
   const { deliveryDate } = req.body;
   const { id } = req.params;
+
   try {
-    await pool.query("UPDATE orders SET deliveryDate = ? WHERE id = ?", [deliveryDate, id]); // REPLACED db.query with await pool.query
+    await pool.query("UPDATE orders SET deliveryDate = ? WHERE id = ?", [
+      deliveryDate,
+      id,
+    ]);
     res.json({ message: "Updated" });
   } catch (err) {
+    console.error("❌ Error updating delivery date:", err);
     return res.status(500).json({ error: "Failed to update delivery date" });
   }
 });
 
-app.delete("/orders/:id", async (req, res) => { // Made async
+
+// ❌ Delete an order
+app.delete("/orders/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+
   try {
-    await pool.query("DELETE FROM orders WHERE id = ?", [id]); // REPLACED db.query with await pool.query
+    await pool.query("DELETE FROM orders WHERE id = ?", [id]);
     res.json({ message: "Deleted" });
   } catch (err) {
+    console.error("❌ Error deleting order:", err);
     return res.status(500).json({ error: "Failed to delete order" });
   }
 });
+
 
 // --- General Payments Management ---
 app.post("/payments/customer", authenticateToken, async (req, res) => { // Made async
